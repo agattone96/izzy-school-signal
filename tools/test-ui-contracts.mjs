@@ -1,0 +1,43 @@
+import assert from "node:assert/strict";
+import fs from "node:fs";
+
+const read=name=>fs.readFileSync(new URL(`../${name}`,import.meta.url),"utf8");
+const design=read("src/70-app-design-system.js"),screens=read("src/71-app-screens.js"),onboarding=read("src/72-onboarding.js"),widgets=read("src/50-widgets.js"),controller=read("src/80-app-controller.js"),settings=read("src/60-settings-migrations.js"),notifications=read("src/61-notifications-data.js");
+
+assert.match(design,/ui-rounded/);
+assert.ok(!/New York|ui-serif|Georgia/.test(design),"competing serif display type was removed");
+assert.match(design,/env\(safe-area-inset-bottom\)/);
+assert.match(design,/@media\(prefers-reduced-motion:reduce\)/);
+assert.match(design,/min-height:46px/);
+for(const state of ["state-info","state-warning","state-success","state-error"])assert.ok(design.includes(state),`missing ${state} treatment`);
+assert.match(screens,/id="calendarSearch"/);
+assert.match(screens,/Next 7 days/);
+assert.match(screens,/Full calendar/);
+assert.match(screens,/Help & Diagnostics/);
+assert.match(screens,/Child’s name or nickname/);
+assert.match(screens,/Grade level/);
+assert.match(screens,/childReference\(settings,true\)/);
+assert.match(settings,/childReference/);
+assert.match(notifications,/has school tomorrow/);
+assert.match(notifications,/has early release tomorrow/);
+assert.ok(!/Agenda["<]|Month["<]/.test(screens),"calendar mode switch was removed in favor of the hybrid");
+for(const step of [1,2,3])assert.ok(onboarding.includes(`step(${step},`),`setup step ${step} is present`);
+assert.ok(!onboarding.includes("step(4,"),"setup remains three steps");
+for(const optional of ["wakeTime","busWindowStart","normalPickup","schoolNightBedtime","notificationsEnabled"])assert.ok(!onboarding.includes(optional),`${optional} remains optional after setup`);
+assert.match(widgets,/addDate\(target\)/);
+assert.match(widgets,/makeSignalWidgetBackground/);
+assert.match(widgets,/FileManager\.local\(\)/);
+assert.match(widgets,/normalizeWidgetMode/);
+assert.match(read("src/90-runtime.js"),/args\.widgetParameter/);
+assert.match(controller,/initialLaunch&&source\.kind==="ics-url"/);
+assert.match(controller,/refreshed\.result&&refreshed\.result\.notModified/);
+assert.match(controller,/if\(route\.route==="today"\|\|route\.route==="calendar"\)/);
+assert.match(controller,/source\.kind==="json-file"\|\|source\.kind==="file"/);
+assert.match(controller,/\["","app"\]\.includes\(launchAction\)/);
+assert.match(read("src/90-runtime.js"),/source\.kind==="robinson"/);
+assert.ok(!read("src/90-runtime.js").includes("restartOnboarding();return runOnboardingBridgeFlow"),"changing a calendar preserves completed setup until replacement succeeds");
+assert.match(screens,/calendarSourceSupportsRefresh/);
+assert.match(screens,/role="alert"/);
+assert.ok(!/New York|Georgia/.test(controller),"sync progress uses the shared rounded system typography");
+
+console.log("UI contracts passed: focused hierarchy, three-step setup, optional personalization, smart calendar, accessible motion, and glanceable widgets.");

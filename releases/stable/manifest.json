@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "appId": "izzy-school-signal",
+  "channel": "stable",
+  "version": "15.3.0",
+  "build": 150300,
+  "dataSchema": 4,
+  "publishedAt": "2026-08-09T11:55:24Z",
+  "scriptURL": "https://raw.githubusercontent.com/agattone96/izzy-school-signal/main/Izzy's%20School%20Signal.js",
+  "sha256": "be7d7f3d4d98bdb5df57aad82d3771f341a4e17961815ec7e90ebd4cf36af0f6",
+  "sourceBytes": 329864,
+  "releaseNotes": [
+    "Fixes replacement transactions so failed calendar, installer, and app-update writes restore safely without retaining backups.",
+    "Adds correct weekly, monthly, yearly, cancellation, exception, time-zone, and tentative-event handling for public iCalendar feeds.",
+    "Makes source refresh actions contextual and prevents file calendars from running the Robinson network sync.",
+    "Fixes live widget countdown units, optional schedule privacy in notifications, settings health warnings, and reset confirmations.",
+    "Preserves setup, personalization, unknown settings fields, calendars, bookmarks, notifications, and user data across source changes."
+  ]
+}

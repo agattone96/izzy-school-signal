@@ -1,0 +1,17 @@
+[
+  "00-calendar-provider.js",
+  "10-presentation.js",
+  "20-calendar-sync.js",
+  "30-updates.js",
+  "40-routing.js",
+  "50-widgets.js",
+  "60-settings-migrations.js",
+  "61-notifications-data.js",
+  "62-diagnostics-onboarding-state.js",
+  "63-app-view-models.js",
+  "70-app-design-system.js",
+  "71-app-screens.js",
+  "72-onboarding.js",
+  "80-app-controller.js",
+  "90-runtime.js"
+]
