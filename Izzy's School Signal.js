@@ -2,7 +2,7 @@
 // These must be at the very top of the file. Do not edit.
 // icon-color: blue; icon-glyph: magic;
 // Izzy's School Signal
-// Version 15.3.0: hardened source refresh, recurrence, transactions, privacy, and actions.
+// Version 15.3.1: hardened validation, settings bridges, timeouts, and privacy.
 
 const __CalendarProviderModule = (() => {
 // Variables used by Scriptable.
@@ -26,11 +26,33 @@ function incrementSchoolYear(schoolYear) {
   return `${start + 1}-${start + 2}`;
 }
 
+const NEW_YORK_MS_PER_HOUR = 60 * 60 * 1000;
+
+function newYorkNthWeekdayOfMonth(year, monthIndex, weekday, occurrence) {
+  const firstWeekday = new Date(Date.UTC(year, monthIndex, 1)).getUTCDay();
+  return 1 + ((7 + weekday - firstWeekday) % 7) + (occurrence - 1) * 7;
+}
+
+function newYorkUtcOffsetHoursAtInstant(date) {
+  const year = date.getUTCFullYear();
+  const marchSunday = newYorkNthWeekdayOfMonth(year, 2, 0, 2);
+  const novemberSunday = newYorkNthWeekdayOfMonth(year, 10, 0, 1);
+  const dstStart = Date.UTC(year, 2, marchSunday, 7, 0, 0);
+  const dstEnd = Date.UTC(year, 10, novemberSunday, 6, 0, 0);
+  return date.getTime() >= dstStart && date.getTime() < dstEnd ? -4 : -5;
+}
+
+function newYorkDateKeyAtInstant(date = new Date()) {
+  const shifted = new Date(date.getTime() + newYorkUtcOffsetHoursAtInstant(date) * NEW_YORK_MS_PER_HOUR);
+  return `${shifted.getUTCFullYear()}-${String(shifted.getUTCMonth() + 1).padStart(2, "0")}-${String(shifted.getUTCDate()).padStart(2, "0")}`;
+}
+
 function fallbackSchoolYear(date = new Date()) {
-  const year = date.getFullYear();
+  const key = newYorkDateKeyAtInstant(date);
+  const year = Number(key.slice(0, 4)), month = Number(key.slice(5, 7));
   // Without a verified calendar boundary, June is the conservative rollover.
   // A loaded calendar can move the rollover earlier to the day after its real last day.
-  return date.getMonth() >= 5 ? `${year}-${year + 1}` : `${year - 1}-${year}`;
+  return month >= 6 ? `${year}-${year + 1}` : `${year - 1}-${year}`;
 }
 
 function deriveActiveSchoolYear(date = new Date(), calendar = null) {
@@ -49,7 +71,7 @@ function deriveActiveSchoolYear(date = new Date(), calendar = null) {
   // Reject future or unrelated calendars as authorities for today's year.
   if (start > fallbackStart || start < fallbackStart - 1) return fallback;
 
-  const todayKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+  const todayKey = newYorkDateKeyAtInstant(date);
   if (todayKey > endDate) return incrementSchoolYear(schoolYear);
   return schoolYear;
 }
@@ -991,6 +1013,39 @@ function writeCalendarSource(value) {
   }
 }
 
+function parseIpv4Host(host) {
+  const parts = String(host || "").split(".");
+  if (!parts.length || parts.length > 4 || parts.some(part => !part)) return null;
+  const values = [];
+  for (const part of parts) {
+    let base = 10, digits = part;
+    if (/^0x[0-9a-f]+$/i.test(part)) { base = 16; digits = part.slice(2); }
+    else if (/^0[0-7]+$/.test(part) && part.length > 1) { base = 8; digits = part.slice(1); }
+    else if (!/^\d+$/.test(part)) return null;
+    const value = parseInt(digits || "0", base);
+    if (!Number.isSafeInteger(value) || value < 0) return null;
+    values.push(value);
+  }
+  const lastLimit = (256 ** (5 - values.length)) - 1;
+  const lastValue = values[values.length - 1];
+  if (values.slice(0, -1).some(value => value > 255) || lastValue > lastLimit) return null;
+  let numeric = lastValue;
+  for (let index = 0; index < values.length - 1; index += 1) numeric += values[index] * (256 ** (3 - index));
+  return [numeric >>> 24, (numeric >>> 16) & 255, (numeric >>> 8) & 255, numeric & 255];
+}
+
+function isPublicIpv4Address(octets) {
+  const [a,b,c] = octets;
+  if (a === 0 || a === 10 || a === 127 || a >= 224) return false;
+  if (a === 100 && b >= 64 && b <= 127) return false;
+  if (a === 169 && b === 254) return false;
+  if (a === 172 && b >= 16 && b <= 31) return false;
+  if (a === 192 && ((b === 0 && c === 0) || (b === 0 && c === 2) || b === 168 || (b === 88 && c === 99))) return false;
+  if (a === 198 && (b === 18 || b === 19 || (b === 51 && c === 100))) return false;
+  if (a === 203 && b === 0 && c === 113) return false;
+  return true;
+}
+
 function assertPublicHttpsCalendarUrl(value) {
   const text = String(value || "").trim();
   if(text.length>2048)throw new Error("Calendar feed URLs must be 2,048 characters or fewer.");
@@ -999,9 +1054,10 @@ function assertPublicHttpsCalendarUrl(value) {
   if(!match)throw new Error("Enter a complete public HTTPS calendar URL.");
   const authority=match[1];if(authority.includes("@"))throw new Error("Authenticated calendar URLs are not supported.");
   const host=String(authority.replace(/:\d+$/,"")).toLowerCase().replace(/\.$/,"");
-  if (!host || host === "localhost" || host.endsWith(".local") || host.includes(":") || /^127\.|^10\.|^192\.168\.|^169\.254\.|^0\./.test(host)) throw new Error("Calendar feeds must be publicly reachable.");
-  const private172 = /^172\.(\d{1,2})\./.exec(host);
-  if (private172 && Number(private172[1]) >= 16 && Number(private172[1]) <= 31) throw new Error("Calendar feeds must be publicly reachable.");
+  if (!host || host === "localhost" || host.endsWith(".local") || host.endsWith(".localhost") || host.endsWith(".internal") || host.includes(":")) throw new Error("Calendar feeds must be publicly reachable.");
+  const numericLooking = /^(?:0x[0-9a-f]+|\d+)(?:\.(?:0x[0-9a-f]+|\d+)){0,3}$/i.test(host);
+  const ipv4 = parseIpv4Host(host);
+  if (numericLooking && (!ipv4 || !isPublicIpv4Address(ipv4))) throw new Error("Calendar feeds must be publicly reachable.");
   return text;
 }
 
@@ -1195,7 +1251,7 @@ async function previewIcsCalendar(url, displayName = "") {
 }
 
 async function installIcsCalendar(url, displayName = "", preparedResult = null) {
-  const now = new Date().toISOString(), previous = readCalendarSource(),safeUrl=assertPublicHttpsCalendarUrl(url),replacing=previous.kind!=="ics-url"||previous.url!==safeUrl;
+  const now = new Date().toISOString(), previous = readCalendarSource(),safeUrl=assertPublicHttpsCalendarUrl(url);
   writeCalendarSource(Object.assign({}, previous, { kind: "ics-url", displayName: displayName || "Calendar feed", url: safeUrl, lastAttemptAt: now, health: "refreshing", error: null }));
   try {
     const result = preparedResult || await fetchIcsCalendar(url, { displayName, previous });
@@ -1209,7 +1265,7 @@ async function installIcsCalendar(url, displayName = "", preparedResult = null) 
     writeCalendarSource({ schemaVersion: 1, kind: "ics-url", displayName: result.calendar.schoolName, url:safeUrl, lastAttemptAt: now, lastSuccessAt: new Date().toISOString(), etag: result.etag, lastModified: result.lastModified, health: "ready", error: null });
     return result;
   } catch (error) {
-    writeCalendarSource(replacing?previous:Object.assign({}, previous, { lastAttemptAt: now, health: CALENDAR ? "stale" : "error", error: error.message || String(error) }));
+    writeCalendarSource(Object.assign({}, previous, { lastAttemptAt: now, health: CALENDAR ? "stale" : "error", error: error.message || String(error) }));
     throw error;
   }
 }
@@ -1390,34 +1446,8 @@ function isWeekend(key) {
   return day === 0 || day === 6;
 }
 
-function nthWeekdayOfMonth(year, monthIndex, weekday, occurrence) {
-  const firstWeekday = new Date(Date.UTC(year, monthIndex, 1)).getUTCDay();
-  return 1 + ((7 + weekday - firstWeekday) % 7) + (occurrence - 1) * 7;
-}
-
-// America/New_York follows current U.S. daylight-saving rules.
-// The school-year dates are 2027–2028, well within these rules.
-function newYorkUtcOffsetHoursAtInstant(date) {
-  const year = date.getUTCFullYear();
-  const marchSunday = nthWeekdayOfMonth(year, 2, 0, 2);
-  const novemberSunday = nthWeekdayOfMonth(year, 10, 0, 1);
-
-  // DST starts at 2:00 a.m. EST (07:00 UTC).
-  const dstStart = Date.UTC(year, 2, marchSunday, 7, 0, 0);
-  // DST ends at 2:00 a.m. EDT (06:00 UTC).
-  const dstEnd = Date.UTC(year, 10, novemberSunday, 6, 0, 0);
-
-  return date.getTime() >= dstStart && date.getTime() < dstEnd ? -4 : -5;
-}
-
 function currentNewYorkDateKey(now = new Date()) {
-  const offsetHours = newYorkUtcOffsetHoursAtInstant(now);
-  const shifted = new Date(now.getTime() + offsetHours * MS_PER_HOUR);
-  return dateKeyFromParts(
-    shifted.getUTCFullYear(),
-    shifted.getUTCMonth() + 1,
-    shifted.getUTCDate()
-  );
+  return newYorkDateKeyAtInstant(now);
 }
 
 function newYorkLocalDateToInstant(key, hour, minute) {
@@ -1711,6 +1741,7 @@ function buildViewModel(todayKey) {
   let countdownText = "—";
   let countdownDestination = null;
   let countdownLine = "Next school date not announced";
+  let countdownTargetKey = null;
   let returnDate = null;
 
   if (compareKeys(todayKey, CALENDAR.firstSchoolDay) < 0) {
@@ -1718,6 +1749,7 @@ function buildViewModel(todayKey) {
     countdownText = String(countdown);
     countdownDestination = "school";
     countdownLine = countdownLabel(countdown, "school");
+    countdownTargetKey = CALENDAR.firstSchoolDay;
     returnDate = CALENDAR.firstSchoolDay;
   } else if (compareKeys(todayKey, CALENDAR.lastSchoolDay) > 0) {
     countdown = null;
@@ -1730,6 +1762,7 @@ function buildViewModel(todayKey) {
       countdownText = String(countdown);
       countdownDestination = "dayOff";
       countdownLine = countdownLabel(countdown, "dayOff");
+      countdownTargetKey = nextDayOff.key;
     }
   } else {
     const nextSchool = findNextSchoolDay(todayKey);
@@ -1738,6 +1771,7 @@ function buildViewModel(todayKey) {
       countdownText = String(countdown);
       countdownDestination = "school";
       countdownLine = countdownLabel(countdown, "school");
+      countdownTargetKey = nextSchool.key;
       returnDate = nextSchool.key;
     } else {
       countdownText = "—";
@@ -1782,6 +1816,8 @@ function buildViewModel(todayKey) {
     countdownText,
     countdownDestination,
     countdownLine,
+    countdownTargetKey,
+    countdownTargetTimestamp: countdownTargetKey ? newYorkLocalDateToInstant(countdownTargetKey, 0, 0).getTime() : null,
     currentEvent: todayInfo.name,
     eventDetail: todayInfo.detail,
     possibleMakeup: todayInfo.possibleMakeup,
@@ -2239,7 +2275,8 @@ function resolvePresentation(input) {
     metric = {
       value: String(baseModel.countdownText),
       label: titleCaseCountdown(baseModel.countdownLine),
-      isNumeric: /^\d+$/.test(String(baseModel.countdownText))
+      isNumeric: /^\d+$/.test(String(baseModel.countdownText)),
+      targetTimestamp: Number.isFinite(Number(baseModel.countdownTargetTimestamp)) ? Number(baseModel.countdownTargetTimestamp) : null
     };
   } else if (state === "school") {
     metric = { value: "SCHOOL", label: "Today", isNumeric: false };
@@ -3235,7 +3272,12 @@ async function loadRenderedSnapshot(url, purpose) {
     return !/\.(?:png|jpe?g|gif|webp|svg|woff2?|ttf|mp4|mov)(?:$|\?)/i.test(requestUrl);
   };
 
-  await web.loadURL(url);
+  await Promise.race([
+    web.loadURL(url),
+    sleep(CONFIG.renderTimeoutMs).then(() => {
+      throw new Error(`The ${purpose} page did not load within ${CONFIG.renderTimeoutMs / 1000} seconds.`);
+    })
+  ]);
   const started = Date.now();
   let snapshot = null;
 
@@ -3647,9 +3689,9 @@ async function main(onProgress = null) {
 const APP_INFO = Object.freeze({
   id: "izzy-school-signal",
   name: "Izzy's School Signal",
-  version: "15.3.0",
-  build: 150300,
-  buildDate: "2026-08-08",
+  version: "15.3.1",
+  build: 150301,
+  buildDate: "2026-08-11",
   dataSchemaVersion: 4,
   calendarSchemaVersion: 1,
   scraperOutputVersion: 1,
@@ -3798,7 +3840,10 @@ function assertTrustedUpdateURL(value, label) {
   return String(value);
 }
 
-function isUpdateEndpointConfigured(value) { return !/agattone96/i.test(String(value || "")); }
+function isUpdateEndpointConfigured(value) {
+  const endpoint = String(value == null ? "" : value).trim();
+  return endpoint !== "" && !endpoint.includes("REPLACE" + "_OWNER");
+}
 
 function utf8BinaryString(value) {
   return encodeURIComponent(String(value)).replace(/%([0-9A-F]{2})/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
@@ -4205,15 +4250,23 @@ function addStatusPill(parent, blueprint, fillWidth) {
   return pill;
 }
 
+function metricTimerTarget(metric, now = new Date()) {
+  const number=Number(metric.value),timerMinutes=Number(metric.timerMinutes),labelText=String(metric.label||"").toLowerCase();
+  if(Number.isFinite(timerMinutes)&&timerMinutes>0)return new Date(now.getTime()+timerMinutes*60000);
+  if(metric.isNumeric&&Number.isFinite(number)&&number>0&&/day/.test(labelText)){
+    const targetTimestamp=Number(metric.targetTimestamp);
+    return Number.isFinite(targetTimestamp)&&targetTimestamp>now.getTime()?new Date(targetTimestamp):null;
+  }
+  return null;
+}
+
 function addMetric(parent, blueprint, align) {
   const family = blueprint.family;
   const numericSize = family === "large" ? 74 : family === "medium" ? 50 : 54;
   const stateSize = family === "large" ? 43 : family === "medium" ? 34 : 32;
   let metric;
-  const number=Number(blueprint.metric.value),timerMinutes=Number(blueprint.metric.timerMinutes),labelText=String(blueprint.metric.label||"").toLowerCase();
-  const liveMilliseconds=Number.isFinite(timerMinutes)&&timerMinutes>0?timerMinutes*60000:blueprint.metric.isNumeric&&Number.isFinite(number)&&number>0&&/day/.test(labelText)?number*86400000:null;
-  if(liveMilliseconds&&typeof parent.addDate==="function"){
-    const target=new Date(Date.now()+liveMilliseconds);
+  const target=metricTimerTarget(blueprint.metric);
+  if(target&&typeof parent.addDate==="function"){
     metric=parent.addDate(target);metric.applyTimerStyle();metric.font=Font.blackRoundedSystemFont(numericSize);metric.textColor=color(PALETTE.iceBlue);metric.lineLimit=1;metric.minimumScaleFactor=.58;
     if(align==="center")metric.centerAlignText();if(align==="right")metric.rightAlignText();
   }else metric = addText(parent, blueprint.metric.value, {
@@ -4435,7 +4488,7 @@ function buildErrorWidget(error) {
     font: Font.semiboldSystemFont(16), color: color("D2AD67"), lineLimit: 2, minimumScaleFactor: 0.66
   });
   widget.addSpacer(6);
-  addText(widget, error.message || String(error), {
+  addText(widget, "Tap to see details and repair steps.", {
     font: Font.mediumSystemFont(10), color: color(PALETTE.mutedBlue), lineLimit: 3, minimumScaleFactor: 0.58
   });
   widget.url = actionUrl("");
@@ -4775,7 +4828,7 @@ function validateScheduleRelationships(settings) {
 
 function validateSettingsForSave(candidate) {
   const errors=[]; const source=candidate&&typeof candidate==="object"?candidate:{}; const school=source.school&&typeof source.school==="object"?source.school:{}; const confirmed=school.confirmedDates&&typeof school.confirmedDates==="object"?school.confirmedDates:{};
-  if (confirmed.firstDay !== undefined && !isRealSettingsDateKey(confirmed.firstDay)) errors.push("First day must be a real calendar date.");
+  if (confirmed.firstDay !== undefined && String(confirmed.firstDay) !== "" && !isRealSettingsDateKey(confirmed.firstDay)) errors.push("First day must be a real calendar date.");
   if (school.timeZone !== undefined && !isValidSettingsTimeZone(school.timeZone)) errors.push("School time zone must be a valid IANA time zone such as America/New_York.");
   if (school.academicYear !== undefined) {
     const match=/^(\d{4})-(\d{4})$/.exec(String(school.academicYear||""));
@@ -5531,7 +5584,7 @@ function todayTabHtml(model){
   const context=model.settings.personalizationEnabled&&t.household&&t.household.context?`<div class="quick-fact"><div><span>What matters next</span><b>${ccEscape(t.household.context)}</b></div></div>`:"";
   const tomorrow=t.tomorrow?`<div class="state state-info"><div><b>${ccEscape(childStatusSentence(model.settings,t.tomorrow.type,'tomorrow'))}</b><span>${ccEscape(t.tomorrow.value)}</span></div></div>`:"";
   const profileDetail=model.settings.profile&&model.settings.profile.gradeLevel?`${model.settings.schoolName} · ${model.settings.profile.gradeLevel}`:model.settings.schoolName;
-  return `${model.settingsWarning?`<div class="state state-error" role="alert"><div><b>Settings need attention</b><span>${ccEscape(model.settingsWarning)}</span></div></div>`:""}${sourceState?`<div class="state state-${sourceState.kind}" role="status"><div><b>${ccEscape(sourceState.title)}</b><span>${ccEscape(sourceState.detail)}</span></div></div>`:""}${t.dataNotice?`<div class="state state-warning"><div><b>Calendar note</b><span>${ccEscape(t.dataNotice)}</span></div></div>`:""}<section class="hero"><div class="hero-copy"><p class="eyebrow">${ccEscape(t.hero.date)}</p><h2>${ccEscape(childStatusSentence(model.settings,p.status&&p.status.key||p.visualState,'today',p.status.label))}</h2><span class="date">${ccEscape(profileDetail)}</span><div class="hero-metric"><strong>${ccEscape(t.hero.metricValue)}</strong><span>${ccEscape(t.hero.metricLabel)}</span></div>${context}</div>${stateSceneHtml(scene,t.hero.status)}</section>${tomorrow}<section class="surface"><div class="section-title"><h2>Next 7 days</h2></div>${dayOutlookHtml(t.outlook)}</section>${upcoming?`<section class="card compact calendar-summary"><div><b>${ccEscape(upcoming.title)}</b><span>${ccEscape(upcoming.dateLabel)}</span></div><a class="mini-button" href="${routeUrl('calendar')}">View calendar ${ccIcon('chevron')}</a></section>`:""}<div class="primary-actions">${calendarSourceAction(source)}<a class="button" href="${routeUrl('settings',{focus:model.settings.personalizationEnabled?'settings-calendar':'settings-routine'})}">${model.settings.personalizationEnabled?'Calendar settings':'Personalize'}</a></div>`;
+  return `${model.settingsWarning?`<div class="state state-error" role="alert"><div><b>Settings need attention</b><span>${ccEscape(model.settingsWarning)}</span></div></div>`:""}${sourceState?`<div class="state state-${sourceState.kind}" role="status"><div><b>${ccEscape(sourceState.title)}</b><span>${ccEscape(sourceState.detail)}</span></div></div>`:""}${t.dataNotice?`<div class="state state-warning"><div><b>Calendar note</b><span>${ccEscape(t.dataNotice)}</span></div></div>`:""}<section class="hero"><div class="hero-copy"><p class="eyebrow">${ccEscape(t.hero.date)}</p><h2>${ccEscape(childStatusSentence(model.settings,p.status&&p.status.key||p.visualState,'today',p.status&&p.status.label))}</h2><span class="date">${ccEscape(profileDetail)}</span><div class="hero-metric"><strong>${ccEscape(t.hero.metricValue)}</strong><span>${ccEscape(t.hero.metricLabel)}</span></div>${context}</div>${stateSceneHtml(scene,t.hero.status)}</section>${tomorrow}<section class="surface"><div class="section-title"><h2>Next 7 days</h2></div>${dayOutlookHtml(t.outlook)}</section>${upcoming?`<section class="card compact calendar-summary"><div><b>${ccEscape(upcoming.title)}</b><span>${ccEscape(upcoming.dateLabel)}</span></div><a class="mini-button" href="${routeUrl('calendar')}">View calendar ${ccIcon('chevron')}</a></section>`:""}<div class="primary-actions">${calendarSourceAction(source)}<a class="button" href="${routeUrl('settings',{focus:model.settings.personalizationEnabled?'settings-calendar':'settings-routine'})}">${model.settings.personalizationEnabled?'Calendar settings':'Personalize'}</a></div>`;
 }
 
 function eventDetailsHtml(event){return `<details><summary>Details</summary><p>${ccEscape(event.notes||"No additional notes.")}</p><p>${ccEscape(event.confidence)}${event.sourcePublishedAt?` · Published ${ccEscape(event.sourcePublishedAt)}`:""}</p></details>`;}
@@ -5739,13 +5792,13 @@ async function runSettingsBridgeFlow(presentation,route){
     if(outcome.kind==="bridge-error")throw outcome.error;
     const payload=outcome.value&&typeof outcome.value==="object"?outcome.value:{};
     try{
-      if(payload.action==="save-override"){
+      if(payload.kind==="save-override"){
         upsertOverride({date:payload.date,status:payload.status,title:payload.title,detail:payload.detail});
         try{await web.evaluateJavaScript(`(function(){const n=document.getElementById('settingsBridgeStatus');if(n){n.textContent='Override saved';n.style.color='#15C7FF';}})()`,false);}catch(_){}
         await presented;
         return true;
       }
-      if(payload.kind!=="save-settings"){
+      if(payload.kind!=="save-settings-section"){
         bridge=armBridge();
         continue;
       }
@@ -5850,7 +5903,11 @@ async function exportDiagnosticsFile(){return exportPhase3Data("diagnostics");}
 function boolQuery(value, fallback=false){if(value===true||value==="true")return true;if(value===false||value==="false")return false;return fallback;}
 function settingsSectionCandidate(section,q,current){
   const c=JSON.parse(JSON.stringify(current));
-  if(section==="school")c.school=Object.assign({},c.school,{name:q.schoolName||c.school.name,timeZone:q.timeZone||c.school.timeZone,startTime:q.schoolStart||c.school.startTime,officialDismissalTime:q.regularDismissal||c.school.officialDismissalTime,officialEarlyReleaseDismissalTime:q.earlyReleaseDismissal||c.school.officialEarlyReleaseDismissalTime,confirmedDates:Object.assign({},c.school.confirmedDates,{firstDay:q.firstDay||c.school.confirmedDates.firstDay,firstDaySource:"user-confirmed",firstDayConfirmedAt:new Date().toISOString().slice(0,10)})});
+  if(section==="school"){
+    const hasFirstDay=Object.prototype.hasOwnProperty.call(q,"firstDay"),firstDay=hasFirstDay?String(q.firstDay||""):c.school.confirmedDates.firstDay;
+    const confirmedDates=hasFirstDay?Object.assign({},c.school.confirmedDates,{firstDay,firstDaySource:firstDay?"user-confirmed":"none",firstDayConfirmedAt:firstDay?new Date().toISOString().slice(0,10):""}):c.school.confirmedDates;
+    c.school=Object.assign({},c.school,{name:q.schoolName||c.school.name,timeZone:q.timeZone||c.school.timeZone,startTime:q.schoolStart||c.school.startTime,officialDismissalTime:q.regularDismissal||c.school.officialDismissalTime,officialEarlyReleaseDismissalTime:q.earlyReleaseDismissal||c.school.officialEarlyReleaseDismissalTime,confirmedDates});
+  }
   if(section==="routine"){c.profile=Object.assign({},c.profile,{childName:String(q.childName||""),gradeLevel:String(q.gradeLevel||"")});c.personalizationEnabled=boolQuery(q.personalizationEnabled);c.household=Object.assign({},c.household,{morning:Object.assign({},c.household.morning,{wakeTime:q.wakeTime||c.household.morning.wakeTime,leaveHomeTime:q.leaveHomeTime||c.household.morning.leaveHomeTime}),transportation:Object.assign({},c.household.transportation,{pickupWindowStart:q.busWindowStart||c.household.transportation.pickupWindowStart,pickupWindowEnd:q.busWindowEnd||c.household.transportation.pickupWindowEnd}),pickup:Object.assign({},c.household.pickup,{regularTime:q.normalPickup||c.household.pickup.regularTime,earlyReleaseTime:q.earlyReleasePickup||c.household.pickup.earlyReleaseTime}),bedtime:Object.assign({},c.household.bedtime,{schoolNight:q.schoolNightBedtime||c.household.bedtime.schoolNight,weekend:q.weekendBedtime||c.household.bedtime.weekend})});}
   if(section==="morning")c.household=Object.assign({},c.household,{morning:Object.assign({},c.household.morning,{wakeTime:q.wakeTime||c.household.morning.wakeTime,leaveHomeTime:q.leaveHomeTime||c.household.morning.leaveHomeTime}),transportation:Object.assign({},c.household.transportation,{pickupWindowStart:q.busWindowStart||c.household.transportation.pickupWindowStart,pickupWindowEnd:q.busWindowEnd||c.household.transportation.pickupWindowEnd})});
   if(section==="pickup")c.household=Object.assign({},c.household,{pickup:Object.assign({},c.household.pickup,{regularTime:q.normalPickup||c.household.pickup.regularTime,earlyReleaseTime:q.earlyReleasePickup||c.household.pickup.earlyReleaseTime})});
@@ -5867,7 +5924,22 @@ function readCalendarFileSafe(){try{const fm=FileManager.iCloud();const p=fm.joi
 async function runOfficialSyncWithDiff(onProgress=null){const before=cloneCalendar(CALENDAR||readCalendarFileSafe());const result=await runEmbeddedCalendarSync(onProgress);if(!result||!result.ok)return Object.freeze({result,diff:null});if(typeof onProgress==="function")try{await onProgress({stage:"complete",label:"Refreshing app state",detail:"Applying confirmed dates and local preferences."});}catch(_){}await CalendarProvider.load();CALENDAR=CalendarProvider.getCalendar();const diff=diffCalendars(before,CALENDAR);recordCalendarDiff(diff);const settings=loadAppSettings().settings;if(diff.count&&settings.notificationsEnabled&&settings.notifyCalendarChanges)await scheduleCalendarChangeNotification(diff);return Object.freeze({result,diff});}
 async function scheduleCalendarChangeNotification(diff){if(typeof Notification==="undefined")return;try{const n=new Notification();n.identifier=`${NOTIFICATION_PREFIX}changes:${Date.now()}`;n.title="School calendar updated";n.body=summarizeDiff(diff);n.threadIdentifier="izzy-school-signal";n.openURL=routeUrl("calendar",{view:"agenda"});n.userInfo={kind:"calendar-change"};n.sound="event";await n.schedule();}catch(_){} }
 
-async function reconcileSchoolNotifications(){const settings=loadAppSettings().settings;const previous=loadNotificationState().value;if(typeof Notification==="undefined")throw new Error("Notifications are not available in this Scriptable runtime.");if(previous.identifiers.length)await Notification.removePending(previous.identifiers);if(!settings.notificationsEnabled){saveNotificationState({identifiers:[],lastReconciledAt:new Date().toISOString()});return Object.freeze({scheduled:0});}const plan=buildNotificationPlan({calendar:calendarWithConfirmedSchoolFacts(CALENDAR,settings),settings,todayKey:CalendarProvider.currentNewYorkDateKey(new Date())});const ids=[];for(const item of plan){if(!(item.triggerDate instanceof Date)||item.triggerDate<=new Date())continue;const n=new Notification();n.identifier=item.identifier;n.title=item.title;n.body=item.body;n.threadIdentifier="izzy-school-signal";n.openURL=routeUrl(item.route||"today");n.userInfo={kind:item.kind};n.sound="event";n.setTriggerDate(item.triggerDate);await n.schedule();ids.push(item.identifier);}saveNotificationState({identifiers:ids,lastReconciledAt:new Date().toISOString()});return Object.freeze({scheduled:ids.length});}
+async function reconcileSchoolNotifications(){
+  const settings=loadAppSettings().settings,previous=loadNotificationState().value;
+  if(typeof Notification==="undefined")throw new Error("Notifications are not available in this Scriptable runtime.");
+  if(previous.identifiers.length)await Notification.removePending(previous.identifiers);
+  if(!settings.notificationsEnabled){saveNotificationState({identifiers:[],lastReconciledAt:new Date().toISOString()});return Object.freeze({scheduled:0});}
+  const plan=buildNotificationPlan({calendar:calendarWithConfirmedSchoolFacts(CALENDAR,settings),settings,todayKey:CalendarProvider.currentNewYorkDateKey(new Date())}),ids=[];
+  try{
+    for(const item of plan){
+      if(!(item.triggerDate instanceof Date)||item.triggerDate<=new Date())continue;
+      const n=new Notification();n.identifier=item.identifier;n.title=item.title;n.body=item.body;n.threadIdentifier="izzy-school-signal";n.openURL=routeUrl(item.route||"today");n.userInfo={kind:item.kind};n.sound="event";n.setTriggerDate(item.triggerDate);await n.schedule();ids.push(item.identifier);
+    }
+  }finally{
+    saveNotificationState({identifiers:ids,lastReconciledAt:new Date().toISOString()});
+  }
+  return Object.freeze({scheduled:ids.length});
+}
 
 function applyManualOverridePresentation(presentation,override,now=new Date()){if(!override)return presentation;const clone=JSON.parse(JSON.stringify(presentation));const baseKey=override.status==="school"?"school":override.status==="early-release"?"earlyRelease":"noSchool";const base=Presentation.statusDefinitions[baseKey]||Presentation.statusDefinitions.noSchool;clone.status=Object.assign({},base,{label:override.title,compactLabel:override.title,symbol:override.status==="closure"?"exclamationmark.triangle.fill":base.symbol});clone.visualState=override.status==="early-release"?"earlyRelease":override.status==="school"?"school":override.status==="closure"?"error":"noSchool";clone.metric=override.status==="closure"?{value:"CLOSED",label:"Today",isNumeric:false}:override.status==="early-release"?{value:"EARLY",label:"Release today",isNumeric:false}:override.status==="school"?{value:"SCHOOL",label:"Manual override",isNumeric:false}:{value:"OFF",label:"Manual no school",isNumeric:false};clone.primaryFact={label:"Local override",value:override.title,compact:`Override · ${override.title}`};clone.secondaryFact=override.detail?{label:"Detail",value:override.detail,compact:override.detail}:null;clone.atmosphere=Presentation.resolveAtmosphere(clone.visualState,now);clone.dataNotice="Local manual override active · official calendar unchanged";return Object.freeze(clone);}
 

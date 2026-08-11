@@ -51,7 +51,7 @@ It does not contain or create personal settings, calendars, notification identif
 
 ## Data migrations
 
-Code version, build, app data schema, settings schema, calendar schema, and calendar-source schema remain separate. Release 15.3.0 continues to use app data schema 4 and settings schema 4. Optional child name and grade fields are additive and do not rewrite unrelated user data.
+Code version, build, app data schema, settings schema, calendar schema, and calendar-source schema remain separate. Release 15.3.1 continues to use app data schema 4 and settings schema 4. Optional child name and grade fields are additive and do not rewrite unrelated user data.
 
 Schema-4 migration:
 
@@ -66,7 +66,7 @@ Migrations, calendar replacement, installer replacement, and app updates use tem
 ## Publish the stable channel
 
 1. Create a public code-only repository whose raw files are served by `raw.githubusercontent.com`.
-2. Replace every `REPLACE_OWNER` occurrence in the app source module, installer, manifest, and update-source example.
+2. For a fork or unpublished template, replace every `REPLACE_OWNER` occurrence in the app source module, installer, manifest, and update-source example. This published repository is already pinned to `agattone96/izzy-school-signal`.
 3. Run `node tools/build-release.mjs`.
 4. Recalculate the bundled app SHA-256 and UTF-8 byte count, then update `releases/stable/manifest.json`.
 5. Run `node tools/verify-release.mjs`.
@@ -76,7 +76,7 @@ Migrations, calendar replacement, installer replacement, and app updates use tem
    - `releases/stable/manifest.json`
 7. Download the raw release and independently confirm its SHA-256 before sharing the installer.
 
-The updater fails closed while `REPLACE_OWNER` remains in the endpoint.
+The updater fails closed only while `REPLACE_OWNER` remains in an endpoint; the published `agattone96` URLs are treated as configured.
 
 ## Updates and diagnostics
 

@@ -723,6 +723,10 @@ stage_initial_safe_snapshot() {
   log 'Staging initial project snapshot after privacy scan...'
   while IFS= read -r rel; do
     [[ -n "$rel" ]] || continue
+    if git -C "$PROJECT_ROOT" check-ignore -q -- "$rel"; then
+      log "Skipping ignored path: $rel"
+      continue
+    fi
     git -C "$PROJECT_ROOT" add -- "$rel"
   done < <(
     cd "$PROJECT_ROOT"

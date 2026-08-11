@@ -172,15 +172,23 @@ function addStatusPill(parent, blueprint, fillWidth) {
   return pill;
 }
 
+function metricTimerTarget(metric, now = new Date()) {
+  const number=Number(metric.value),timerMinutes=Number(metric.timerMinutes),labelText=String(metric.label||"").toLowerCase();
+  if(Number.isFinite(timerMinutes)&&timerMinutes>0)return new Date(now.getTime()+timerMinutes*60000);
+  if(metric.isNumeric&&Number.isFinite(number)&&number>0&&/day/.test(labelText)){
+    const targetTimestamp=Number(metric.targetTimestamp);
+    return Number.isFinite(targetTimestamp)&&targetTimestamp>now.getTime()?new Date(targetTimestamp):null;
+  }
+  return null;
+}
+
 function addMetric(parent, blueprint, align) {
   const family = blueprint.family;
   const numericSize = family === "large" ? 74 : family === "medium" ? 50 : 54;
   const stateSize = family === "large" ? 43 : family === "medium" ? 34 : 32;
   let metric;
-  const number=Number(blueprint.metric.value),timerMinutes=Number(blueprint.metric.timerMinutes),labelText=String(blueprint.metric.label||"").toLowerCase();
-  const liveMilliseconds=Number.isFinite(timerMinutes)&&timerMinutes>0?timerMinutes*60000:blueprint.metric.isNumeric&&Number.isFinite(number)&&number>0&&/day/.test(labelText)?number*86400000:null;
-  if(liveMilliseconds&&typeof parent.addDate==="function"){
-    const target=new Date(Date.now()+liveMilliseconds);
+  const target=metricTimerTarget(blueprint.metric);
+  if(target&&typeof parent.addDate==="function"){
     metric=parent.addDate(target);metric.applyTimerStyle();metric.font=Font.blackRoundedSystemFont(numericSize);metric.textColor=color(PALETTE.iceBlue);metric.lineLimit=1;metric.minimumScaleFactor=.58;
     if(align==="center")metric.centerAlignText();if(align==="right")metric.rightAlignText();
   }else metric = addText(parent, blueprint.metric.value, {
@@ -402,7 +410,7 @@ function buildErrorWidget(error) {
     font: Font.semiboldSystemFont(16), color: color("D2AD67"), lineLimit: 2, minimumScaleFactor: 0.66
   });
   widget.addSpacer(6);
-  addText(widget, error.message || String(error), {
+  addText(widget, "Tap to see details and repair steps.", {
     font: Font.mediumSystemFont(10), color: color(PALETTE.mutedBlue), lineLimit: 3, minimumScaleFactor: 0.58
   });
   widget.url = actionUrl("");

@@ -54,7 +54,7 @@ const CalendarProvider = {
   readCalendarSource(){const sourcePath=path.join(dataDirectory,"calendar-source.json");return fs.existsSync(sourcePath)?JSON.parse(fs.readFileSync(sourcePath,"utf8")):{schemaVersion:1,kind:"file",displayName:"Installed calendar",health:"ready"};},
   writeCalendarSource(value){const sourcePath=path.join(dataDirectory,"calendar-source.json");writeUpdateJson(sourcePath,{schemaVersion:1,kind:value.kind||"file",displayName:value.displayName||"Installed calendar",health:value.health||"ready"},fm);return value;}
 };
-const api = new Function("FileManager", "APP_INFO", "updateDataDirectory", "updateTimestamp", "writeUpdateJson", "atomicReplaceTextFile", "CalendarProvider", `${settingsSection};return {validateAppSettings,saveAppSettings,runAppDataMigrations,APP_DEFAULT_SETTINGS};`)(FileManager, APP_INFO, updateDataDirectory, updateTimestamp, writeUpdateJson, atomicReplaceTextFile, CalendarProvider);
+const api = new Function("FileManager", "APP_INFO", "updateDataDirectory", "updateTimestamp", "writeUpdateJson", "atomicReplaceTextFile", "CalendarProvider", `${settingsSection};return {validateAppSettings,validateSettingsForSave,saveAppSettings,runAppDataMigrations,APP_DEFAULT_SETTINGS};`)(FileManager, APP_INFO, updateDataDirectory, updateTimestamp, writeUpdateJson, atomicReplaceTextFile, CalendarProvider);
 const settingsPath = path.join(dataDirectory, "settings.json");
 const fixture = {
   schemaVersion: 2,
@@ -115,6 +115,8 @@ assert.equal(api.APP_DEFAULT_SETTINGS.school.name, "My School");
 assert.equal(api.APP_DEFAULT_SETTINGS.school.confirmedDates.firstDay, "");
 assert.equal(api.APP_DEFAULT_SETTINGS.profile.childName, "");
 assert.equal(api.APP_DEFAULT_SETTINGS.profile.gradeLevel, "");
+assert.deepEqual(api.validateSettingsForSave({ ...migrated, school: { ...migrated.school, confirmedDates: { ...migrated.school.confirmedDates, firstDay: "" } } }), []);
+assert.match(api.validateSettingsForSave({ ...migrated, school: { ...migrated.school, confirmedDates: { ...migrated.school.confirmedDates, firstDay: "2026-02-30" } } }).join(" "), /real calendar date/);
 
 const personalized = api.saveAppSettings({ ...savedAgain, profile: { childName: "  Emma   Rose  ", gradeLevel: " 3rd grade " } });
 assert.equal(personalized.profile.childName, "Emma Rose");

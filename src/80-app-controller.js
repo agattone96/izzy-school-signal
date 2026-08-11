@@ -164,13 +164,13 @@ async function runSettingsBridgeFlow(presentation,route){
     if(outcome.kind==="bridge-error")throw outcome.error;
     const payload=outcome.value&&typeof outcome.value==="object"?outcome.value:{};
     try{
-      if(payload.action==="save-override"){
+      if(payload.kind==="save-override"){
         upsertOverride({date:payload.date,status:payload.status,title:payload.title,detail:payload.detail});
         try{await web.evaluateJavaScript(`(function(){const n=document.getElementById('settingsBridgeStatus');if(n){n.textContent='Override saved';n.style.color='#15C7FF';}})()`,false);}catch(_){}
         await presented;
         return true;
       }
-      if(payload.kind!=="save-settings"){
+      if(payload.kind!=="save-settings-section"){
         bridge=armBridge();
         continue;
       }
@@ -275,7 +275,11 @@ async function exportDiagnosticsFile(){return exportPhase3Data("diagnostics");}
 function boolQuery(value, fallback=false){if(value===true||value==="true")return true;if(value===false||value==="false")return false;return fallback;}
 function settingsSectionCandidate(section,q,current){
   const c=JSON.parse(JSON.stringify(current));
-  if(section==="school")c.school=Object.assign({},c.school,{name:q.schoolName||c.school.name,timeZone:q.timeZone||c.school.timeZone,startTime:q.schoolStart||c.school.startTime,officialDismissalTime:q.regularDismissal||c.school.officialDismissalTime,officialEarlyReleaseDismissalTime:q.earlyReleaseDismissal||c.school.officialEarlyReleaseDismissalTime,confirmedDates:Object.assign({},c.school.confirmedDates,{firstDay:q.firstDay||c.school.confirmedDates.firstDay,firstDaySource:"user-confirmed",firstDayConfirmedAt:new Date().toISOString().slice(0,10)})});
+  if(section==="school"){
+    const hasFirstDay=Object.prototype.hasOwnProperty.call(q,"firstDay"),firstDay=hasFirstDay?String(q.firstDay||""):c.school.confirmedDates.firstDay;
+    const confirmedDates=hasFirstDay?Object.assign({},c.school.confirmedDates,{firstDay,firstDaySource:firstDay?"user-confirmed":"none",firstDayConfirmedAt:firstDay?new Date().toISOString().slice(0,10):""}):c.school.confirmedDates;
+    c.school=Object.assign({},c.school,{name:q.schoolName||c.school.name,timeZone:q.timeZone||c.school.timeZone,startTime:q.schoolStart||c.school.startTime,officialDismissalTime:q.regularDismissal||c.school.officialDismissalTime,officialEarlyReleaseDismissalTime:q.earlyReleaseDismissal||c.school.officialEarlyReleaseDismissalTime,confirmedDates});
+  }
   if(section==="routine"){c.profile=Object.assign({},c.profile,{childName:String(q.childName||""),gradeLevel:String(q.gradeLevel||"")});c.personalizationEnabled=boolQuery(q.personalizationEnabled);c.household=Object.assign({},c.household,{morning:Object.assign({},c.household.morning,{wakeTime:q.wakeTime||c.household.morning.wakeTime,leaveHomeTime:q.leaveHomeTime||c.household.morning.leaveHomeTime}),transportation:Object.assign({},c.household.transportation,{pickupWindowStart:q.busWindowStart||c.household.transportation.pickupWindowStart,pickupWindowEnd:q.busWindowEnd||c.household.transportation.pickupWindowEnd}),pickup:Object.assign({},c.household.pickup,{regularTime:q.normalPickup||c.household.pickup.regularTime,earlyReleaseTime:q.earlyReleasePickup||c.household.pickup.earlyReleaseTime}),bedtime:Object.assign({},c.household.bedtime,{schoolNight:q.schoolNightBedtime||c.household.bedtime.schoolNight,weekend:q.weekendBedtime||c.household.bedtime.weekend})});}
   if(section==="morning")c.household=Object.assign({},c.household,{morning:Object.assign({},c.household.morning,{wakeTime:q.wakeTime||c.household.morning.wakeTime,leaveHomeTime:q.leaveHomeTime||c.household.morning.leaveHomeTime}),transportation:Object.assign({},c.household.transportation,{pickupWindowStart:q.busWindowStart||c.household.transportation.pickupWindowStart,pickupWindowEnd:q.busWindowEnd||c.household.transportation.pickupWindowEnd})});
   if(section==="pickup")c.household=Object.assign({},c.household,{pickup:Object.assign({},c.household.pickup,{regularTime:q.normalPickup||c.household.pickup.regularTime,earlyReleaseTime:q.earlyReleasePickup||c.household.pickup.earlyReleaseTime})});
@@ -292,7 +296,22 @@ function readCalendarFileSafe(){try{const fm=FileManager.iCloud();const p=fm.joi
 async function runOfficialSyncWithDiff(onProgress=null){const before=cloneCalendar(CALENDAR||readCalendarFileSafe());const result=await runEmbeddedCalendarSync(onProgress);if(!result||!result.ok)return Object.freeze({result,diff:null});if(typeof onProgress==="function")try{await onProgress({stage:"complete",label:"Refreshing app state",detail:"Applying confirmed dates and local preferences."});}catch(_){}await CalendarProvider.load();CALENDAR=CalendarProvider.getCalendar();const diff=diffCalendars(before,CALENDAR);recordCalendarDiff(diff);const settings=loadAppSettings().settings;if(diff.count&&settings.notificationsEnabled&&settings.notifyCalendarChanges)await scheduleCalendarChangeNotification(diff);return Object.freeze({result,diff});}
 async function scheduleCalendarChangeNotification(diff){if(typeof Notification==="undefined")return;try{const n=new Notification();n.identifier=`${NOTIFICATION_PREFIX}changes:${Date.now()}`;n.title="School calendar updated";n.body=summarizeDiff(diff);n.threadIdentifier="izzy-school-signal";n.openURL=routeUrl("calendar",{view:"agenda"});n.userInfo={kind:"calendar-change"};n.sound="event";await n.schedule();}catch(_){} }
 
-async function reconcileSchoolNotifications(){const settings=loadAppSettings().settings;const previous=loadNotificationState().value;if(typeof Notification==="undefined")throw new Error("Notifications are not available in this Scriptable runtime.");if(previous.identifiers.length)await Notification.removePending(previous.identifiers);if(!settings.notificationsEnabled){saveNotificationState({identifiers:[],lastReconciledAt:new Date().toISOString()});return Object.freeze({scheduled:0});}const plan=buildNotificationPlan({calendar:calendarWithConfirmedSchoolFacts(CALENDAR,settings),settings,todayKey:CalendarProvider.currentNewYorkDateKey(new Date())});const ids=[];for(const item of plan){if(!(item.triggerDate instanceof Date)||item.triggerDate<=new Date())continue;const n=new Notification();n.identifier=item.identifier;n.title=item.title;n.body=item.body;n.threadIdentifier="izzy-school-signal";n.openURL=routeUrl(item.route||"today");n.userInfo={kind:item.kind};n.sound="event";n.setTriggerDate(item.triggerDate);await n.schedule();ids.push(item.identifier);}saveNotificationState({identifiers:ids,lastReconciledAt:new Date().toISOString()});return Object.freeze({scheduled:ids.length});}
+async function reconcileSchoolNotifications(){
+  const settings=loadAppSettings().settings,previous=loadNotificationState().value;
+  if(typeof Notification==="undefined")throw new Error("Notifications are not available in this Scriptable runtime.");
+  if(previous.identifiers.length)await Notification.removePending(previous.identifiers);
+  if(!settings.notificationsEnabled){saveNotificationState({identifiers:[],lastReconciledAt:new Date().toISOString()});return Object.freeze({scheduled:0});}
+  const plan=buildNotificationPlan({calendar:calendarWithConfirmedSchoolFacts(CALENDAR,settings),settings,todayKey:CalendarProvider.currentNewYorkDateKey(new Date())}),ids=[];
+  try{
+    for(const item of plan){
+      if(!(item.triggerDate instanceof Date)||item.triggerDate<=new Date())continue;
+      const n=new Notification();n.identifier=item.identifier;n.title=item.title;n.body=item.body;n.threadIdentifier="izzy-school-signal";n.openURL=routeUrl(item.route||"today");n.userInfo={kind:item.kind};n.sound="event";n.setTriggerDate(item.triggerDate);await n.schedule();ids.push(item.identifier);
+    }
+  }finally{
+    saveNotificationState({identifiers:ids,lastReconciledAt:new Date().toISOString()});
+  }
+  return Object.freeze({scheduled:ids.length});
+}
 
 function applyManualOverridePresentation(presentation,override,now=new Date()){if(!override)return presentation;const clone=JSON.parse(JSON.stringify(presentation));const baseKey=override.status==="school"?"school":override.status==="early-release"?"earlyRelease":"noSchool";const base=Presentation.statusDefinitions[baseKey]||Presentation.statusDefinitions.noSchool;clone.status=Object.assign({},base,{label:override.title,compactLabel:override.title,symbol:override.status==="closure"?"exclamationmark.triangle.fill":base.symbol});clone.visualState=override.status==="early-release"?"earlyRelease":override.status==="school"?"school":override.status==="closure"?"error":"noSchool";clone.metric=override.status==="closure"?{value:"CLOSED",label:"Today",isNumeric:false}:override.status==="early-release"?{value:"EARLY",label:"Release today",isNumeric:false}:override.status==="school"?{value:"SCHOOL",label:"Manual override",isNumeric:false}:{value:"OFF",label:"Manual no school",isNumeric:false};clone.primaryFact={label:"Local override",value:override.title,compact:`Override · ${override.title}`};clone.secondaryFact=override.detail?{label:"Detail",value:override.detail,compact:override.detail}:null;clone.atmosphere=Presentation.resolveAtmosphere(clone.visualState,now);clone.dataNotice="Local manual override active · official calendar unchanged";return Object.freeze(clone);}
 

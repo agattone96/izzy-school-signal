@@ -28,7 +28,7 @@ class TestAlert {
   addCancelAction(){}
   async presentAlert(){return 0;}
 }
-const installerSource=fs.readFileSync(path.join(root,"Izzy School Signal Installer.js"),"utf8");
+const installerSource=fs.readFileSync(path.join(root,"Izzy School Signal Installer.js"),"utf8").replaceAll("agattone96","REPLACE_OWNER");
 const installerBody=installerSource.slice(0,installerSource.lastIndexOf("try { await install(); }"));
 const AsyncFunction=Object.getPrototypeOf(async function(){}).constructor;
 const installerApi=await new AsyncFunction("FileManager","Alert","Safari","Request",`${installerBody};return {install,localManifestFromSource};`)({iCloud:()=>fm},TestAlert,{open:url=>opened.push(url)},class{});
@@ -39,7 +39,7 @@ assert.equal(await installerApi.install(),true);
 assert.equal(fs.readFileSync(target,"utf8"),releaseSource);
 assert.ok(opened[0].includes("scriptable:///run?scriptName="));
 const receipt=JSON.parse(fs.readFileSync(path.join(temporaryRoot,"IzzySchoolSignal","installation.json"),"utf8"));
-assert.equal(receipt.installedVersion,"15.3.0");
+assert.equal(receipt.installedVersion,"15.3.1");
 assert.equal(fs.readdirSync(path.join(temporaryRoot,"IzzySchoolSignal")).some(name=>name.includes(".tmp-")||name.includes(".rollback-")),false);
 
 // The in-app updater must move the active script aside before installing and restore it if post-install validation fails.

@@ -918,7 +918,12 @@ async function loadRenderedSnapshot(url, purpose) {
     return !/\.(?:png|jpe?g|gif|webp|svg|woff2?|ttf|mp4|mov)(?:$|\?)/i.test(requestUrl);
   };
 
-  await web.loadURL(url);
+  await Promise.race([
+    web.loadURL(url),
+    sleep(CONFIG.renderTimeoutMs).then(() => {
+      throw new Error(`The ${purpose} page did not load within ${CONFIG.renderTimeoutMs / 1000} seconds.`);
+    })
+  ]);
   const started = Date.now();
   let snapshot = null;
 

@@ -306,7 +306,8 @@ function resolvePresentation(input) {
     metric = {
       value: String(baseModel.countdownText),
       label: titleCaseCountdown(baseModel.countdownLine),
-      isNumeric: /^\d+$/.test(String(baseModel.countdownText))
+      isNumeric: /^\d+$/.test(String(baseModel.countdownText)),
+      targetTimestamp: Number.isFinite(Number(baseModel.countdownTargetTimestamp)) ? Number(baseModel.countdownTargetTimestamp) : null
     };
   } else if (state === "school") {
     metric = { value: "SCHOOL", label: "Today", isNumeric: false };

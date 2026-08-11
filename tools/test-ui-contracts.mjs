@@ -25,11 +25,25 @@ for(const step of [1,2,3])assert.ok(onboarding.includes(`step(${step},`),`setup 
 assert.ok(!onboarding.includes("step(4,"),"setup remains three steps");
 for(const optional of ["wakeTime","busWindowStart","normalPickup","schoolNightBedtime","notificationsEnabled"])assert.ok(!onboarding.includes(optional),`${optional} remains optional after setup`);
 assert.match(widgets,/addDate\(target\)/);
+const metricTimerTarget=new Function(`${widgets};return metricTimerTarget;`)();
+const metricNow=new Date(2026,7,11,15,45,0);
+const calendarTarget=Date.parse("2026-08-13T04:00:00.000Z");
+const dayTarget=metricTimerTarget({value:"2",label:"days",isNumeric:true,targetTimestamp:calendarTarget},metricNow);
+assert.equal(dayTarget.getTime(),calendarTarget,"day countdowns use the supplied New York calendar target instant");
+assert.equal(metricTimerTarget({value:"2",label:"days",isNumeric:true},metricNow),null,"day countdowns do not invent a device-local target");
+assert.equal(metricTimerTarget({value:"30",label:"minutes",isNumeric:true,timerMinutes:30},metricNow).getTime(),metricNow.getTime()+30*60000,"minute countdowns remain relative to now");
+assert.match(widgets,/Tap to see details and repair steps\./);
+assert.ok(!widgets.includes("error.message || String(error)"),"widgets do not expose raw runtime errors");
 assert.match(widgets,/makeSignalWidgetBackground/);
 assert.match(widgets,/FileManager\.local\(\)/);
 assert.match(widgets,/normalizeWidgetMode/);
 assert.match(read("src/90-runtime.js"),/args\.widgetParameter/);
 assert.match(controller,/initialLaunch&&source\.kind==="ics-url"/);
+assert.match(screens,/settingsFormScript\('overrideForm','save-override'/);
+assert.match(screens,/settingsFormScript\(id,'save-settings-section'/);
+assert.match(controller,/payload\.kind==="save-override"/);
+assert.match(controller,/payload\.kind!=="save-settings-section"/);
+assert.ok(!controller.includes('payload.action==="save-override"'),"settings bridge dispatches only on payload.kind");
 assert.match(controller,/refreshed\.result&&refreshed\.result\.notModified/);
 assert.match(controller,/if\(route\.route==="today"\|\|route\.route==="calendar"\)/);
 assert.match(controller,/source\.kind==="json-file"\|\|source\.kind==="file"/);
@@ -39,5 +53,17 @@ assert.ok(!read("src/90-runtime.js").includes("restartOnboarding();return runOnb
 assert.match(screens,/calendarSourceSupportsRefresh/);
 assert.match(screens,/role="alert"/);
 assert.ok(!/New York|Georgia/.test(controller),"sync progress uses the shared rounded system typography");
+
+const candidateStart=controller.indexOf("function boolQuery");
+const candidateEnd=controller.indexOf("\nfunction cloneCalendar",candidateStart);
+const settingsSectionCandidate=new Function(`${controller.slice(candidateStart,candidateEnd)};return settingsSectionCandidate;`)();
+const schoolSettings={school:{name:"School",timeZone:"America/New_York",startTime:"08:00",officialDismissalTime:"14:00",officialEarlyReleaseDismissalTime:"13:00",confirmedDates:{firstDay:"2026-08-11",firstDaySource:"official-import",firstDayConfirmedAt:"2026-08-01"}}};
+const clearedFirstDay=settingsSectionCandidate("school",{firstDay:""},schoolSettings).school.confirmedDates;
+assert.deepEqual(clearedFirstDay,{firstDay:"",firstDaySource:"none",firstDayConfirmedAt:""});
+assert.deepEqual(settingsSectionCandidate("school",{},schoolSettings).school.confirmedDates,schoolSettings.school.confirmedDates,"omitted first day preserves existing confirmation metadata");
+const confirmedFirstDay=settingsSectionCandidate("school",{firstDay:"2026-08-12"},schoolSettings).school.confirmedDates;
+assert.equal(confirmedFirstDay.firstDay,"2026-08-12");
+assert.equal(confirmedFirstDay.firstDaySource,"user-confirmed");
+assert.match(confirmedFirstDay.firstDayConfirmedAt,/^\d{4}-\d{2}-\d{2}$/);
 
 console.log("UI contracts passed: focused hierarchy, three-step setup, optional personalization, smart calendar, accessible motion, and glanceable widgets.");

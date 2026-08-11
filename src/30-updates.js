@@ -1,9 +1,9 @@
 const APP_INFO = Object.freeze({
   id: "izzy-school-signal",
   name: "Izzy's School Signal",
-  version: "15.3.0",
-  build: 150300,
-  buildDate: "2026-08-08",
+  version: "15.3.1",
+  build: 150301,
+  buildDate: "2026-08-11",
   dataSchemaVersion: 4,
   calendarSchemaVersion: 1,
   scraperOutputVersion: 1,
@@ -152,7 +152,10 @@ function assertTrustedUpdateURL(value, label) {
   return String(value);
 }
 
-function isUpdateEndpointConfigured(value) { return !/agattone96/i.test(String(value || "")); }
+function isUpdateEndpointConfigured(value) {
+  const endpoint = String(value == null ? "" : value).trim();
+  return endpoint !== "" && !endpoint.includes("REPLACE" + "_OWNER");
+}
 
 function utf8BinaryString(value) {
   return encodeURIComponent(String(value)).replace(/%([0-9A-F]{2})/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)));

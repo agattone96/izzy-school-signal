@@ -303,7 +303,7 @@ function validateScheduleRelationships(settings) {
 
 function validateSettingsForSave(candidate) {
   const errors=[]; const source=candidate&&typeof candidate==="object"?candidate:{}; const school=source.school&&typeof source.school==="object"?source.school:{}; const confirmed=school.confirmedDates&&typeof school.confirmedDates==="object"?school.confirmedDates:{};
-  if (confirmed.firstDay !== undefined && !isRealSettingsDateKey(confirmed.firstDay)) errors.push("First day must be a real calendar date.");
+  if (confirmed.firstDay !== undefined && String(confirmed.firstDay) !== "" && !isRealSettingsDateKey(confirmed.firstDay)) errors.push("First day must be a real calendar date.");
   if (school.timeZone !== undefined && !isValidSettingsTimeZone(school.timeZone)) errors.push("School time zone must be a valid IANA time zone such as America/New_York.");
   if (school.academicYear !== undefined) {
     const match=/^(\d{4})-(\d{4})$/.exec(String(school.academicYear||""));

@@ -185,7 +185,7 @@ async function confirmInstall(manifest, replacing) {
 async function install() {
   const fm = FileManager.iCloud(), documents = fm.documentsDirectory();
   const target = fm.joinPath(documents, `${INSTALLER.appName}.js`), replacing = fm.fileExists(target);
-  if (/agattone96/i.test(INSTALLER.manifestURL)) {
+  if (String(INSTALLER.manifestURL).includes("REPLACE" + "_OWNER")) {
     if (!replacing) throw new Error("This installer still needs its published stable release server. Ask the sender for the current Izzy’s School Signal script until distribution hosting is connected.");
     if (typeof fm.isFileDownloaded === "function" && !fm.isFileDownloaded(target)) await fm.downloadFileFromiCloud(target);
     const manifest = localManifestFromSource(fm.readString(target));
