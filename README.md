@@ -38,6 +38,8 @@ For routine maintenance, watch the repository so GitHub emails you about failed 
 
 On the iPhone, Scriptable reads its validated local cache and does no calendar network work at startup or during widget rendering. **Sync Now** downloads only the prepared Pages JSON, with a 15-second timeout and last-known-good fallback.
 
+The primary app is the GitHub Pages PWA. After the first successful workflow deployment, open `https://agattone96.github.io/izzy-school-signal/` in Safari, tap **Share → Add to Home Screen**, and launch **School Signal** from the new icon. The PWA has one Settings tab, one Sync action, visible update status, and browser-local offline recovery. Safari requires the Add to Home Screen confirmation; it is not a true one-click install.
+
 Local live check (downloads only the public HCPS page and writes ignored files under `build/`):
 
 ```zsh

@@ -28,4 +28,10 @@ assert.equal(status.firstSchoolDay, calendar.startDate);
 assert.equal(status.lastSchoolDay, calendar.endDate);
 assert.match(status.calendarSha256, /^[a-f0-9]{64}$/);
 
+for (const relative of ["index.html", "styles.css", "app.js", "service-worker.js", "manifest.webmanifest"]) {
+  assert.equal(fs.existsSync(path.join(directory, relative)), true, `Pages artifact is missing ${relative}`);
+  const text = fs.readFileSync(path.join(directory, relative), "utf8");
+  assert.doesNotMatch(text, /(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_|Bearer\s+[A-Za-z0-9._-]{12,}|https?:\/\/[^\s/@]+:[^\s/@]+@)/i, `${relative} contains a credential-like value`);
+}
+
 console.log("Pages artifact privacy check passed: only validated public calendar and status data are present.");

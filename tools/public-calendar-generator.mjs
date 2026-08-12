@@ -226,6 +226,7 @@ function atomicJsonWrite(destination, value, validate) {
 export function writePagesData(calendar, outputDirectory) {
   validatePublicCalendarDocument(calendar);
   assertPublicPayloadSafe(calendar);
+  fs.cpSync(path.join(root, "pwa"), outputDirectory, { recursive: true });
   const dataDirectory = path.join(outputDirectory, "data");
   const calendarPath = path.join(dataDirectory, "calendar.json");
   atomicJsonWrite(calendarPath, calendar, value => {

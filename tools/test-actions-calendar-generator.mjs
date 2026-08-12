@@ -45,6 +45,8 @@ try {
   assert.equal(JSON.parse(fs.readFileSync(result.calendarPath, "utf8")).schoolYear, "2026-2027");
   assert.equal(JSON.parse(fs.readFileSync(result.statusPath, "utf8")).status, "ready");
   assert.equal(fs.existsSync(path.join(temporary, ".nojekyll")), true);
+  assert.equal(fs.existsSync(path.join(temporary, "index.html")), true, "PWA shell is included with the public data");
+  assert.equal(fs.existsSync(path.join(temporary, "service-worker.js")), true, "offline worker is included with the public data");
   assert.equal(fs.readdirSync(path.join(temporary, "data")).some(name => /candidate|rollback/.test(name)), false);
 
   const previous = fs.readFileSync(result.calendarPath, "utf8");

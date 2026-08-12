@@ -25,6 +25,10 @@ Scriptable never refreshes a calendar merely because the app or a widget opened.
 
 Public `.ics` sources remain supported as an explicit manual alternative. The former WebView scraper remains in source temporarily for migration traceability but is no longer called by the daily runtime.
 
+## Primary PWA
+
+The dependency-free PWA under `pwa/` is the primary Home Screen entry point. It provides Today, Calendar, and Settings; visible online/offline and last-sync status; manual sync; strict client-side candidate checks; browser-local active and previous caches; Home Screen metadata; and an offline service worker. Display preferences stay in browser storage and are never included in Pages output. It intentionally contains no child profile, household schedule, account, or secret.
+
 ## Public and private rule
 
 The published calendar may contain official public school dates and their public source URLs. It must never contain a child's name, grade, household times, private schedule, notification identifiers, address, credentials, cookies, photos, or device paths.

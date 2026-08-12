@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#020812">
+  <meta name="color-scheme" content="dark">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="School Signal">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="icon" href="icons/app-icon-192.png">
+  <link rel="stylesheet" href="styles.css">
+  <title>Izzy’s School Signal</title>
+</head>
+<body>
+  <a class="skip-link" href="#content">Skip to content</a>
+  <div class="app-shell">
+    <header class="app-header">
+      <div class="brand-mark" aria-hidden="true">✦</div>
+      <div>
+        <h1>Izzy’s School Signal</h1>
+        <p id="connectionStatus" class="connection-status" role="status" aria-live="polite">Loading saved calendar…</p>
+      </div>
+      <div class="moon" aria-hidden="true">☾</div>
+    </header>
+
+    <main id="content" tabindex="-1"></main>
+
+    <nav class="bottom-nav" aria-label="Primary navigation">
+      <a href="#today" data-route="today"><span aria-hidden="true">⌂</span>Today</a>
+      <a href="#calendar" data-route="calendar"><span aria-hidden="true">▦</span>Calendar</a>
+      <a href="#settings" data-route="settings"><span aria-hidden="true">⚙</span>Settings</a>
+    </nav>
+  </div>
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+  <script src="app.js" defer></script>
+</body>
+</html>
