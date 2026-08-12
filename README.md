@@ -40,6 +40,8 @@ On the iPhone, Scriptable reads its validated local cache and does no calendar n
 
 The primary app is the GitHub Pages PWA. After the first successful workflow deployment, open `https://agattone96.github.io/izzy-school-signal/` in Safari, tap **Share → Add to Home Screen**, and launch **School Signal** from the new icon. The PWA has one Settings tab, one Sync action, visible update status, and browser-local offline recovery. Safari requires the Add to Home Screen confirmation; it is not a true one-click install.
 
+For the no-code iPhone walkthrough, use [docs/iphone-install.md](docs/iphone-install.md). Before relying on the app, complete [docs/device-test-checklist.md](docs/device-test-checklist.md). Automated and still-manual verification are recorded in [docs/verification-report.md](docs/verification-report.md).
+
 Local live check (downloads only the public HCPS page and writes ignored files under `build/`):
 
 ```zsh

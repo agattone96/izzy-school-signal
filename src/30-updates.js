@@ -1,8 +1,8 @@
 const APP_INFO = Object.freeze({
   id: "izzy-school-signal",
   name: "Izzy's School Signal",
-  version: "15.5.0",
-  build: 150500,
+  version: "15.5.1",
+  build: 150501,
   buildDate: "2026-08-11",
   dataSchemaVersion: 4,
   calendarSchemaVersion: 1,

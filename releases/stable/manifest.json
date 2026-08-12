@@ -2,17 +2,17 @@
   "schemaVersion": 1,
   "appId": "izzy-school-signal",
   "channel": "stable",
-  "version": "15.5.0",
-  "build": 150500,
+  "version": "15.5.1",
+  "build": 150501,
   "dataSchema": 4,
-  "publishedAt": "2026-08-12T03:40:01Z",
+  "publishedAt": "2026-08-12T03:59:28Z",
   "scriptURL": "https://raw.githubusercontent.com/agattone96/izzy-school-signal/main/Izzy's%20School%20Signal.js",
-  "sha256": "2968b014024f62f39054bbd0a9a3eb898cad4ba49fd6fc8ac111ac9888e650b8",
-  "sourceBytes": 348520,
+  "sha256": "4fad289599d0952688829074f64bbafa51ff6159d7e378127304fb3ebdd5af96",
+  "sourceBytes": 349392,
   "releaseNotes": [
     "Stops automatic calendar network work when Scriptable opens or renders a widget.",
     "Manual Sync Now downloads the small calendar already prepared by GitHub Actions instead of scraping on the iPhone.",
     "Uses a 15-second request timeout and preserves the last valid offline calendar after every download or validation failure.",
-    "Shows prepared-data progress and records the last successful sync without publishing private device state."
+    "Adds a confirmed, reversible Restore last saved calendar action in Scriptable Settings."
   ]
 }

@@ -39,7 +39,7 @@ assert.equal(await installerApi.install(),true);
 assert.equal(fs.readFileSync(target,"utf8"),releaseSource);
 assert.ok(opened[0].includes("scriptable:///run?scriptName="));
 const receipt=JSON.parse(fs.readFileSync(path.join(temporaryRoot,"IzzySchoolSignal","installation.json"),"utf8"));
-assert.equal(receipt.installedVersion,"15.5.0");
+assert.equal(receipt.installedVersion,"15.5.1");
 assert.equal(fs.readdirSync(path.join(temporaryRoot,"IzzySchoolSignal")).some(name=>name.includes(".tmp-")||name.includes(".rollback-")),false);
 
 // The in-app updater must move the active script aside before installing and restore it if post-install validation fails.
