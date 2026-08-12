@@ -818,6 +818,10 @@ function buildCombinedOutput(baseCalendar, updateSnapshots, updateEvents) {
 }
 
 function validateOutput(output) {
+  validatePublicCalendarDocument(output, {
+    schemaVersion: SCRAPER_INFO.calendarSchemaVersion,
+    scraperOutputVersion: SCRAPER_INFO.outputVersion
+  });
   const errors = [];
   if (!output || typeof output !== "object") errors.push("Output is missing.");
   if (output && output.schemaVersion !== 1) errors.push("schemaVersion must be 1.");
@@ -1278,12 +1282,15 @@ async function main(onProgress = null) {
   validateOutput(output);
 
   await emitSyncProgress(onProgress, "install", "Installing validated calendar", "Finishing the validated calendar update.");
-  const installation = await installActiveCalendar(output);
-  const paths = { activePath: installation.activePath, outputPath: installation.activePath, latestPath: installation.activePath };
+  const installation = await CalendarProvider.installPublicCalendarData(output, {
+    expectedSchoolYear: schoolYear,
+    sourceLabel: "Robinson public calendar"
+  });
+  const paths = { activePath: installation.destination, outputPath: installation.destination, latestPath: installation.destination };
   clearStaleFailureDiagnostic();
   logStep("SAVED", paths.latestPath);
   logStep("ACTIVE_CALENDAR", installation.activePath);
-  await emitSyncProgress(onProgress, "complete", "Calendar ready", `${output.events.length} events · ${installation.changed ? "updated" : "already current"}.`);
+  await emitSyncProgress(onProgress, "complete", "Calendar ready", `${output.events.length} events · validated and cached.`);
 
   if (config.runsInApp) await notifyCompletion(output);
   Script.setShortcutOutput(JSON.stringify({

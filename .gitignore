@@ -1,0 +1,29 @@
+# Private Scriptable and iPhone runtime state. Never publish these files.
+/calendar-source.json
+/calendar.json
+/calendar-last-known-good.json
+/calendar-cache-receipt.json
+/change-history.json
+/data-migration-state.json
+/installation.json
+/notification-state.json
+/onboarding-state.json
+/overrides.json
+/settings.json
+/sync-status.json
+/update-state.json
+/update-source.json
+/last-scraper-error.txt
+/diagnostics-redacted.json
+/exports/
+
+# Temporary transaction files.
+/*.tmp
+/*.tmp-*
+/*.rollback
+/*.rollback-*
+/.izzy-*
+
+# Common local development files.
+/.DS_Store
+/node_modules/

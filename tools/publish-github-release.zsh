@@ -246,7 +246,10 @@ copy_project_for_dry_run() {
   mkdir -p "$destination"
   (
     cd "$PROJECT_ROOT"
-    tar --exclude='./.git' --exclude='./.git/*' -cf - .
+    # Include tracked files plus intentional untracked source, while honoring the
+    # committed privacy ignore list. Local Scriptable state never enters the copy.
+    git ls-files --cached --others --exclude-standard -z |
+      tar --null -T - -cf -
   ) | (
     cd "$destination"
     tar -xf -
@@ -512,8 +515,11 @@ const root = process.env.ROOT;
 const forbiddenBasenames = new Set([
   '.env', '.env.local', '.env.production',
   'settings.json', 'calendar.json', 'calendar-last-valid.json',
-  'bookmarks.json', 'notifications.json', 'notification-identifiers.json',
-  'installation.json'
+  'calendar-last-known-good.json', 'calendar-cache-receipt.json', 'calendar-source.json',
+  'change-history.json', 'data-migration-state.json', 'sync-status.json', 'update-state.json',
+  'update-source.json', 'onboarding-state.json', 'overrides.json', 'last-scraper-error.txt',
+  'bookmarks.json', 'notifications.json', 'notification-identifiers.json', 'notification-state.json',
+  'diagnostics-redacted.json', 'installation.json'
 ]);
 const forbiddenSegments = new Set([
   'backups', 'backup', 'exports', 'export', 'diagnostics', 'diagnostic',

@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agattone96.github.io/izzy-school-signal/schemas/public-calendar.schema.json",
+  "title": "Izzy School Signal Public Calendar",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schemaVersion", "scraperOutputVersion", "calendarRevision", "schoolYear",
+    "schoolName", "district", "timeZone", "startDate", "endDate", "updatedAt",
+    "sourceUrl", "sourceTitle", "generatedBy", "events"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "scraperOutputVersion": { "const": 1 },
+    "calendarRevision": { "type": "integer", "minimum": 1 },
+    "schoolYear": { "type": "string", "pattern": "^20[0-9]{2}-20[0-9]{2}$" },
+    "schoolName": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "district": { "type": "string", "minLength": 1, "maxLength": 160 },
+    "timeZone": { "type": "string", "minLength": 1, "maxLength": 80 },
+    "startDate": { "$ref": "#/$defs/date" },
+    "endDate": { "$ref": "#/$defs/date" },
+    "updatedAt": { "type": "string", "format": "date-time" },
+    "sourceUrl": { "type": "string", "format": "uri", "pattern": "^https://" },
+    "sourceTitle": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "generatedBy": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["name", "version", "generatedAt"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "version": { "type": "string", "minLength": 1 },
+        "generatedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "events": {
+      "type": "array",
+      "minItems": 8,
+      "items": { "$ref": "#/$defs/event" }
+    }
+  },
+  "$defs": {
+    "date": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" },
+    "event": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["id", "title", "type", "startDate", "endDate", "status", "notes", "sourceUrl"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 180 },
+        "title": { "type": "string", "minLength": 1, "maxLength": 240 },
+        "type": {
+          "enum": [
+            "school_day", "holiday", "break", "non_student_day", "early_release",
+            "grading_period", "student_return", "makeup_day", "school_closure", "schedule_exception"
+          ]
+        },
+        "startDate": { "$ref": "#/$defs/date" },
+        "endDate": { "$ref": "#/$defs/date" },
+        "status": { "enum": ["confirmed", "tentative", "incomplete"] },
+        "notes": { "type": ["string", "array"] },
+        "sourceUrl": { "type": "string", "format": "uri", "pattern": "^https://" }
+      }
+    }
+  }
+}

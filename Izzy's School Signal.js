@@ -2,7 +2,7 @@
 // These must be at the very top of the file. Do not edit.
 // icon-color: blue; icon-glyph: magic;
 // Izzy's School Signal
-// Version 15.3.1: hardened validation, settings bridges, timeouts, and privacy.
+// Version 15.4.0: shared public-calendar validation and recoverable local caching.
 
 const __CalendarProviderModule = (() => {
 // Variables used by Scriptable.
@@ -80,6 +80,121 @@ function calendarMatchesActiveYear(calendar, date = new Date(), authorityCalenda
   if (!calendar || typeof calendar !== "object") return false;
   const expected = deriveActiveSchoolYear(date, authorityCalendar || calendar);
   return String(calendar.schoolYear || "").trim() === expected;
+}
+
+const PUBLIC_CALENDAR_EVENT_TYPES = Object.freeze([
+  "school_day", "holiday", "break", "non_student_day", "early_release",
+  "grading_period", "student_return", "makeup_day", "school_closure", "schedule_exception"
+]);
+const PUBLIC_CALENDAR_EVENT_STATUSES = Object.freeze(["confirmed", "tentative", "incomplete"]);
+
+function publicRealDateKey(value, label) {
+  const text = String(value || "");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) throw new Error(`${label} must use YYYY-MM-DD.`);
+  const [year, month, day] = text.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) {
+    throw new Error(`${label} must be a real calendar date.`);
+  }
+  return text;
+}
+
+function publicIsoDateTime(value, label) {
+  const text = String(value || "");
+  if (!text || !/T/.test(text) || Number.isNaN(new Date(text).getTime())) {
+    throw new Error(`${label} must be a valid ISO date-time.`);
+  }
+  return text;
+}
+
+function publicHttpsUrl(value, label) {
+  const text = String(value || "").trim();
+  if (!/^https:\/\/[^\s/@]+(?:[^\s]*)$/i.test(text) || /^https:\/\/[^/]*@/i.test(text)) {
+    throw new Error(`${label} must be a public HTTPS URL without credentials.`);
+  }
+  return text;
+}
+
+function validatePublicCalendarDocument(data, options = {}) {
+  if (!data || typeof data !== "object" || Array.isArray(data)) throw new Error("Public calendar must contain one JSON object.");
+  const schemaVersion = Number.isInteger(options.schemaVersion) ? options.schemaVersion : 1;
+  const scraperOutputVersion = Number.isInteger(options.scraperOutputVersion) ? options.scraperOutputVersion : 1;
+  const minimumEventCount = Number.isInteger(options.minimumEventCount) ? Math.max(1, options.minimumEventCount) : 8;
+  if (data.schemaVersion !== schemaVersion) throw new Error(`Public calendar schemaVersion must be ${schemaVersion}.`);
+  if (data.scraperOutputVersion !== scraperOutputVersion) throw new Error(`Public calendar scraperOutputVersion must be ${scraperOutputVersion}.`);
+
+  const schoolYear = String(data.schoolYear || "").trim();
+  const schoolYearMatch = /^(20\d{2})-(20\d{2})$/.exec(schoolYear);
+  if (!schoolYearMatch || Number(schoolYearMatch[2]) !== Number(schoolYearMatch[1]) + 1) {
+    throw new Error("Public calendar schoolYear must use consecutive YYYY-YYYY years.");
+  }
+  for (const field of ["schoolName", "district", "timeZone", "sourceTitle"]) {
+    if (!String(data[field] || "").trim()) throw new Error(`Public calendar is missing ${field}.`);
+  }
+  const startDate = publicRealDateKey(data.startDate, "Public calendar startDate");
+  const endDate = publicRealDateKey(data.endDate, "Public calendar endDate");
+  if (startDate > endDate) throw new Error("Public calendar startDate must be on or before endDate.");
+  if (!startDate.startsWith(`${schoolYearMatch[1]}-`) || !endDate.startsWith(`${schoolYearMatch[2]}-`)) {
+    throw new Error("Public calendar boundaries do not match its academic year.");
+  }
+  const spanDays = Math.round((Date.parse(`${endDate}T00:00:00Z`) - Date.parse(`${startDate}T00:00:00Z`)) / 86400000);
+  if (spanDays < 120 || spanDays > 400) throw new Error("Public calendar school-year span is suspicious.");
+  publicIsoDateTime(data.updatedAt, "Public calendar updatedAt");
+  publicHttpsUrl(data.sourceUrl, "Public calendar sourceUrl");
+  if (!data.generatedBy || typeof data.generatedBy !== "object" || Array.isArray(data.generatedBy)) {
+    throw new Error("Public calendar is missing generatedBy metadata.");
+  }
+  if (!String(data.generatedBy.name || "").trim() || !String(data.generatedBy.version || "").trim()) {
+    throw new Error("Public calendar generatedBy name and version are required.");
+  }
+  publicIsoDateTime(data.generatedBy.generatedAt, "Public calendar generatedBy.generatedAt");
+
+  if (!Array.isArray(data.events) || data.events.length < minimumEventCount) {
+    throw new Error(`Public calendar event results are suspiciously small; expected at least ${minimumEventCount}.`);
+  }
+  const ids = new Set(), fingerprints = new Set();
+  let previousDate = "", firstSchoolDay = null, lastSchoolDay = null;
+  for (let index = 0; index < data.events.length; index++) {
+    const event = data.events[index], label = `events[${index}]`;
+    if (!event || typeof event !== "object" || Array.isArray(event)) throw new Error(`${label} must be an object.`);
+    const id = String(event.id || "").trim(), title = String(event.title || "").trim();
+    const type = String(event.type || "").trim().toLowerCase().replace(/[\s-]+/g, "_");
+    const status = String(event.status || "").trim().toLowerCase();
+    const eventStart = publicRealDateKey(event.startDate, `${label}.startDate`);
+    const eventEnd = publicRealDateKey(event.endDate || event.startDate, `${label}.endDate`);
+    if (!id || ids.has(id)) throw new Error(`Duplicate or missing event identifier at ${label}.`);
+    ids.add(id);
+    if (!title) throw new Error(`${label} is missing title.`);
+    if (!PUBLIC_CALENDAR_EVENT_TYPES.includes(type)) throw new Error(`${label} has unsupported type ${String(event.type)}.`);
+    if (!PUBLIC_CALENDAR_EVENT_STATUSES.includes(status)) throw new Error(`${label} has unsupported status ${String(event.status)}.`);
+    if (eventStart > eventEnd) throw new Error(`${label} starts after it ends.`);
+    if (eventStart < startDate || eventEnd > endDate) throw new Error(`${label} falls outside the school-year boundaries.`);
+    if (previousDate && eventStart < previousDate) throw new Error("Public calendar events must be in chronological order.");
+    previousDate = eventStart;
+    if (!Object.prototype.hasOwnProperty.call(event, "notes")) throw new Error(`${label} must include notes, even when empty.`);
+    publicHttpsUrl(event.sourceUrl || data.sourceUrl, `${label}.sourceUrl`);
+    const fingerprint = [eventStart, eventEnd, type, title.toLowerCase().replace(/\s+/g, " ")].join("|");
+    if (fingerprints.has(fingerprint)) throw new Error(`Duplicate event content at ${label}.`);
+    fingerprints.add(fingerprint);
+    if (/first day of school/i.test(title) && !firstSchoolDay) firstSchoolDay = eventStart;
+    if (/last day of school/i.test(title)) lastSchoolDay = eventEnd;
+  }
+  if (!firstSchoolDay) throw new Error("Public calendar is missing the first school day marker.");
+  if (!lastSchoolDay) throw new Error("Public calendar is missing the last school day marker.");
+  if (startDate !== firstSchoolDay) throw new Error("Public calendar startDate must match the first school day marker.");
+  if (endDate !== lastSchoolDay) throw new Error("Public calendar endDate must match the last school day marker.");
+
+  return Object.freeze({
+    valid: true,
+    schemaVersion,
+    scraperOutputVersion,
+    schoolYear,
+    eventCount: data.events.length,
+    firstSchoolDay,
+    lastSchoolDay,
+    updatedAt: String(data.updatedAt),
+    sourceUrl: String(data.sourceUrl)
+  });
 }
 
 
@@ -501,6 +616,11 @@ function validateScraperOutputData(data, sourceLabel = "Scraper output") {
     );
   }
 
+  const publicValidation = validatePublicCalendarDocument(data, {
+    schemaVersion: APP_INFO.calendarSchemaVersion,
+    scraperOutputVersion: SCRAPER_OUTPUT_VERSION
+  });
+
   validateSchoolYearId(data.schoolYear);
 
   const requiredText = [
@@ -640,6 +760,7 @@ function validateScraperOutputData(data, sourceLabel = "Scraper output") {
     eventCount: data.events.length,
     tentativeCount,
     incompleteCount,
+    publicValidation,
     warnings: Object.freeze(warnings.slice()),
     calendar: normalized,
     raw: data
@@ -840,52 +961,158 @@ async function previewCalendarImportFromPath(sourcePath, options = {}) {
   });
 }
 
+function lastKnownGoodCalendarPath() {
+  const fm = calendarFileManager();
+  return fm.joinPath(calendarDirectoryPath(fm), "calendar-last-known-good.json");
+}
+
+function calendarCacheReceiptPath() {
+  const fm = calendarFileManager();
+  return fm.joinPath(calendarDirectoryPath(fm), "calendar-cache-receipt.json");
+}
+
+function validateCalendarRaw(raw, label) {
+  const parsed = parseCalendarJson(raw, label);
+  const previousCalendar = CALENDAR;
+  CALENDAR = parsed;
+  try { validateCalendar(); }
+  finally { CALENDAR = previousCalendar; }
+  return parsed;
+}
+
+async function recoverInterruptedCalendarFile(fm, destination, rollback, label) {
+  if (!fm.fileExists(rollback)) return;
+  if (!fm.fileExists(destination)) {
+    fm.move(rollback, destination);
+    return;
+  }
+  try {
+    validateCalendarRaw(await readTextFile(fm, destination), label);
+    fm.remove(rollback);
+  } catch (_) {
+    fm.remove(destination);
+    fm.move(rollback, destination);
+  }
+}
+
 async function atomicWriteInstalledCalendar(raw) {
   const fm = calendarFileManager();
   ensureCalendarDirectory(fm);
   const destination = installedCalendarPath(fm);
+  const lastKnownGood = lastKnownGoodCalendarPath();
   const temporary = `${destination}.tmp`;
   const rollback = `${destination}.rollback`;
+  const lastKnownGoodTemporary = `${lastKnownGood}.tmp`;
+  const lastKnownGoodRollback = `${lastKnownGood}.rollback`;
 
+  await recoverInterruptedCalendarFile(fm, destination, rollback, "Recovered installed calendar");
+  await recoverInterruptedCalendarFile(fm, lastKnownGood, lastKnownGoodRollback, "Recovered last-known-good calendar");
   if (fm.fileExists(temporary)) fm.remove(temporary);
-  if (fm.fileExists(rollback)) fm.remove(rollback);
+  if (fm.fileExists(lastKnownGoodTemporary)) fm.remove(lastKnownGoodTemporary);
 
   const formatted = JSON.stringify(JSON.parse(raw), null, 2);
   fm.writeString(temporary, formatted);
-
-  const verified = parseCalendarJson(await readTextFile(fm, temporary), "Temporary calendar");
-  const previousCalendar = CALENDAR;
-  CALENDAR = verified;
-  try {
-    validateCalendar();
-  } finally {
-    CALENDAR = previousCalendar;
-  }
+  validateCalendarRaw(await readTextFile(fm, temporary), "Temporary calendar");
 
   let hadExisting = false;
+  let movedLastKnownGood = false;
   try {
     if (fm.fileExists(destination)) {
       hadExisting = true;
       const currentRaw = await readTextFile(fm, destination);
-      fm.writeString(rollback, currentRaw);
-      fm.remove(destination);
+      try {
+        validateCalendarRaw(currentRaw, "Previous installed calendar");
+        fm.writeString(lastKnownGoodTemporary, currentRaw);
+        validateCalendarRaw(await readTextFile(fm, lastKnownGoodTemporary), "Staged last-known-good calendar");
+      } catch (_) {
+        if (fm.fileExists(lastKnownGoodTemporary)) fm.remove(lastKnownGoodTemporary);
+      }
+      fm.move(destination, rollback);
+    }
+    if (fm.fileExists(lastKnownGoodTemporary)) {
+      if (fm.fileExists(lastKnownGood)) {
+        fm.move(lastKnownGood, lastKnownGoodRollback);
+        movedLastKnownGood = true;
+      }
+      fm.move(lastKnownGoodTemporary, lastKnownGood);
+      validateCalendarRaw(await readTextFile(fm, lastKnownGood), "Last-known-good verification");
     }
     fm.move(temporary, destination);
-
-    const installedRaw = await readTextFile(fm, destination);
-    parseCalendarJson(installedRaw, "Installed calendar verification");
+    validateCalendarRaw(await readTextFile(fm, destination), "Installed calendar verification");
     if (fm.fileExists(rollback)) fm.remove(rollback);
+    if (fm.fileExists(lastKnownGoodRollback)) fm.remove(lastKnownGoodRollback);
     return destination;
   } catch (error) {
     if (fm.fileExists(temporary)) fm.remove(temporary);
+    if (fm.fileExists(lastKnownGoodTemporary)) fm.remove(lastKnownGoodTemporary);
     if (hadExisting && fm.fileExists(rollback)) {
       if (fm.fileExists(destination)) fm.remove(destination);
       fm.move(rollback, destination);
     } else if (!hadExisting && fm.fileExists(destination)) {
       fm.remove(destination);
     }
+    if (movedLastKnownGood && fm.fileExists(lastKnownGoodRollback)) {
+      if (fm.fileExists(lastKnownGood)) fm.remove(lastKnownGood);
+      fm.move(lastKnownGoodRollback, lastKnownGood);
+    }
     throw error;
   }
+}
+
+function writeCalendarCacheReceipt(value) {
+  const fm = calendarFileManager(), path = calendarCacheReceiptPath(), temporary = `${path}.tmp`;
+  if (fm.fileExists(temporary)) fm.remove(temporary);
+  fm.writeString(temporary, JSON.stringify(value, null, 2) + "\n");
+  JSON.parse(fm.readString(temporary));
+  if (fm.fileExists(path)) fm.remove(path);
+  fm.move(temporary, path);
+  return path;
+}
+
+async function installPublicCalendarData(data, options = {}) {
+  const validation = validatePublicCalendarDocument(data, {
+    schemaVersion: APP_INFO.calendarSchemaVersion,
+    scraperOutputVersion: SCRAPER_OUTPUT_VERSION,
+    minimumEventCount: options.minimumEventCount
+  });
+  const expectedSchoolYear = options.expectedSchoolYear || deriveActiveSchoolYear(new Date(), CALENDAR);
+  if (validation.schoolYear !== expectedSchoolYear) {
+    throw new Error(`Refusing ${validation.schoolYear}. The active school year is ${expectedSchoolYear}.`);
+  }
+  const raw = JSON.stringify(data, null, 2), normalized = normalizeCalendarData(data, options.sourceLabel || "Validated public calendar");
+  const destination = await atomicWriteInstalledCalendar(raw);
+  CALENDAR_SOURCE = destination;
+  CALENDAR = normalized;
+  evaluateDataFreshness();
+  const receipt = Object.freeze({
+    schemaVersion: 1,
+    validation: "valid",
+    installedAt: new Date().toISOString(),
+    schoolYear: validation.schoolYear,
+    calendarRevision: Number.isInteger(data.calendarRevision) ? data.calendarRevision : 1,
+    eventCount: validation.eventCount,
+    sourceUrl: validation.sourceUrl,
+    generatedAt: data.generatedBy.generatedAt,
+    generatorVersion: String(data.generatedBy.version)
+  });
+  try { writeCalendarCacheReceipt(receipt); }
+  catch (error) { if (typeof console !== "undefined" && console.log) console.log(`Calendar receipt could not be saved: ${error.message || String(error)}`); }
+  return Object.freeze({ changed: true, destination, validation, receipt });
+}
+
+async function restoreLastKnownGoodCalendar(options = {}) {
+  const fm = calendarFileManager(), path = lastKnownGoodCalendarPath();
+  if (!fm.fileExists(path)) throw new Error("No last-known-good calendar is available.");
+  const raw = await readTextFile(fm, path), normalized = validateCalendarRaw(raw, "Last-known-good calendar");
+  const expectedSchoolYear = options.expectedSchoolYear || deriveActiveSchoolYear(new Date(), CALENDAR);
+  if (normalized.schoolYear !== expectedSchoolYear) {
+    throw new Error(`The last-known-good calendar is for ${normalized.schoolYear}, not ${expectedSchoolYear}.`);
+  }
+  const destination = await atomicWriteInstalledCalendar(raw);
+  CALENDAR_SOURCE = destination;
+  CALENDAR = normalized;
+  evaluateDataFreshness();
+  return Object.freeze({ restored: true, destination, schoolYear: normalized.schoolYear });
 }
 
 async function commitCalendarImport(candidate, options = {}) {
@@ -1910,6 +2137,10 @@ function buildViewModel(todayKey) {
     fetchIcsCalendar,
     installIcsCalendar,
     refreshConfiguredCalendarSource,
+    installPublicCalendarData,
+    restoreLastKnownGoodCalendar,
+    lastKnownGoodCalendarPath,
+    calendarCacheReceiptPath,
     readCalendarSource,
     writeCalendarSource,
     normalizeCalendarSource,
@@ -1960,6 +2191,7 @@ function buildViewModel(todayKey) {
 }
   return Object.freeze({
     createCalendarProvider,
+    validatePublicCalendarDocument,
     deriveActiveSchoolYear,
     calendarMatchesActiveYear,
     incrementSchoolYear,
@@ -3172,6 +3404,10 @@ function buildCombinedOutput(baseCalendar, updateSnapshots, updateEvents) {
 }
 
 function validateOutput(output) {
+  validatePublicCalendarDocument(output, {
+    schemaVersion: SCRAPER_INFO.calendarSchemaVersion,
+    scraperOutputVersion: SCRAPER_INFO.outputVersion
+  });
   const errors = [];
   if (!output || typeof output !== "object") errors.push("Output is missing.");
   if (output && output.schemaVersion !== 1) errors.push("schemaVersion must be 1.");
@@ -3632,12 +3868,15 @@ async function main(onProgress = null) {
   validateOutput(output);
 
   await emitSyncProgress(onProgress, "install", "Installing validated calendar", "Finishing the validated calendar update.");
-  const installation = await installActiveCalendar(output);
-  const paths = { activePath: installation.activePath, outputPath: installation.activePath, latestPath: installation.activePath };
+  const installation = await CalendarProvider.installPublicCalendarData(output, {
+    expectedSchoolYear: schoolYear,
+    sourceLabel: "Robinson public calendar"
+  });
+  const paths = { activePath: installation.destination, outputPath: installation.destination, latestPath: installation.destination };
   clearStaleFailureDiagnostic();
   logStep("SAVED", paths.latestPath);
   logStep("ACTIVE_CALENDAR", installation.activePath);
-  await emitSyncProgress(onProgress, "complete", "Calendar ready", `${output.events.length} events · ${installation.changed ? "updated" : "already current"}.`);
+  await emitSyncProgress(onProgress, "complete", "Calendar ready", `${output.events.length} events · validated and cached.`);
 
   if (config.runsInApp) await notifyCompletion(output);
   Script.setShortcutOutput(JSON.stringify({
@@ -3689,8 +3928,8 @@ async function main(onProgress = null) {
 const APP_INFO = Object.freeze({
   id: "izzy-school-signal",
   name: "Izzy's School Signal",
-  version: "15.3.1",
-  build: 150301,
+  version: "15.4.0",
+  build: 150400,
   buildDate: "2026-08-11",
   dataSchemaVersion: 4,
   calendarSchemaVersion: 1,

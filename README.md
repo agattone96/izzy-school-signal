@@ -2,6 +2,27 @@
 
 This workspace contains the canonical modular source, deterministic bundler, distribution-safe Scriptable installer, bundled app, and stable-channel manifest.
 
+## Easiest maintenance path
+
+You do not need to understand or edit the bundled JavaScript by hand.
+
+1. Tell your coding assistant what behavior you want changed.
+2. Ask it to edit only the modular files under `src/` and add or update tests.
+3. Ask it to run:
+
+```zsh
+node tools/check-project.mjs
+```
+
+`PROJECT CHECK PASSED` means the modular source, tests, generated bundle, privacy protections, and stable manifest agree. If it fails, copy the complete output back to the coding assistant. Do not publish a release from a failed check.
+
+A useful prompt to copy is:
+
+> Make this change in the modular `src/` files, preserve existing behavior and private data, add deterministic tests, rebuild the bundled Scriptable app, update the release manifest, and run `node tools/check-project.mjs`. Do not publish anything. Tell me what still needs testing on an iPhone.
+
+Private iPhone and Scriptable state is excluded by the committed `.gitignore`. The public calendar and cache-receipt contracts live under `schemas/`.
+The approved PWA-centered responsibility split is documented in `docs/architecture.md`.
+
 ## Development source
 
 Edit files under `src/`. Do not hand-edit the bundled `Izzy's School Signal.js` release.
@@ -35,6 +56,7 @@ node tools/test-ui-contracts.mjs
 node tools/test-ics-calendar.mjs
 node tools/test-notification-plans.mjs
 node tools/verify-release.mjs
+node tools/check-project.mjs
 ```
 
 `tools/extract-modules.mjs` is a one-time recovery tool. It refuses to overwrite modules unless `--force` is supplied.
