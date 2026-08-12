@@ -11,7 +11,13 @@ Izzy's School Signal is moving incrementally toward this responsibility split:
 | Apple Shortcuts | Optional guided installation, manual refresh, Reminders, and device-specific actions |
 | iPhone/iCloud storage | Private settings, household state, overrides, notification identifiers, and last-known-good data |
 
-Milestone 2 establishes the shared data seam. The public calendar contract is `schemas/public-calendar.schema.json`, with stricter semantic checks implemented by `validatePublicCalendarDocument` in `src/00-calendar-provider.js`. Future GitHub Actions and PWA code must consume that same contract.
+Milestone 2 established the shared data seam. Milestone 3 adds the server-side generator and fail-closed Pages deployment. The public calendar contract is `schemas/public-calendar.schema.json`, with stricter semantic checks implemented by `validatePublicCalendarDocument` in `src/00-calendar-provider.js`. GitHub Actions and future PWA code consume that same contract.
+
+## Server-side calendar update
+
+`.github/workflows/public-calendar.yml` runs manually, weekly, and daily during July and August. It downloads the exact official HCPS academic-year page, extracts the server-rendered table, validates the complete candidate, scans the artifact for private fields, and deploys only `data/calendar.json` and `data/status.json` to Pages. The action versions are pinned to full commit hashes.
+
+The generator uses Node built-ins only. A network, parsing, validation, or privacy failure stops before artifact upload, so the previously deployed Pages site remains the last-known-good public copy. GitHub Actions may start late or skip an individual schedule; the redundant schedule and manual **Run workflow** control are the free fallback. No Pushcut subscription or secret is required.
 
 ## Public and private rule
 
@@ -33,4 +39,4 @@ The previous calendar remains usable after malformed data, an incomplete downloa
 
 ## Intentionally deferred
 
-GitHub Actions acquisition, the PWA shell, the lightweight remote-cache adapter, and the guided Shortcut belong to later approved milestones. The existing Scriptable app remains functional while those pieces are added one at a time.
+The PWA shell, lightweight Scriptable remote-cache adapter, and guided Shortcut belong to later milestones. The existing Scriptable app remains functional while those pieces are added one at a time.

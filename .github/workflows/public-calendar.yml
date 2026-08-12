@@ -1,0 +1,68 @@
+name: Update public school calendar
+
+on:
+  workflow_dispatch:
+    inputs:
+      school_year:
+        description: Optional school year override (YYYY-YYYY)
+        required: false
+        type: string
+  schedule:
+    # GitHub schedules can run late. Daily July/August discovery plus a weekly
+    # check provides redundancy without making GitHub a frequently written DB.
+    - cron: "23 10 * 7,8 *"
+    - cron: "23 10 * * 2"
+
+concurrency:
+  group: public-calendar-pages
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  validate-build-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Test calendar generator
+        run: node tools/test-actions-calendar-generator.mjs
+
+      - name: Build validated public data
+        env:
+          REQUESTED_SCHOOL_YEAR: ${{ inputs.school_year }}
+        run: |
+          if [[ -n "$REQUESTED_SCHOOL_YEAR" ]]; then
+            node tools/public-calendar-generator.mjs --school-year "$REQUESTED_SCHOOL_YEAR" --output build/pages
+          else
+            node tools/public-calendar-generator.mjs --output build/pages
+          fi
+
+      - name: Check public artifact for private data
+        run: node tools/test-pages-artifact-privacy.mjs build/pages
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6
+
+      - name: Upload validated Pages artifact
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5
+        with:
+          path: build/pages
+
+      - name: Deploy without replacing the last good site on earlier failure
+        id: deployment
+        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5
+
+      - name: Explain a failed update
+        if: failure()
+        run: |
+          echo "## Public calendar update failed" >> "$GITHUB_STEP_SUMMARY"
+          echo "The previously deployed Pages data was not replaced. Open the failed step above for the plain-language error." >> "$GITHUB_STEP_SUMMARY"

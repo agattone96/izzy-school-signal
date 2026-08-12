@@ -23,6 +23,26 @@ A useful prompt to copy is:
 Private iPhone and Scriptable state is excluded by the committed `.gitignore`. The public calendar and cache-receipt contracts live under `schemas/`.
 The approved PWA-centered responsibility split is documented in `docs/architecture.md`.
 
+## Automatic public calendar update
+
+The repository now includes a free GitHub Actions updater. It prepares only official public school-calendar data and deploys it to GitHub Pages after strict validation and a privacy scan. A failed run does not replace the last successful Pages deployment.
+
+One-time GitHub setup:
+
+1. Open the repository's **Settings → Pages**.
+2. Under **Build and deployment**, choose **GitHub Actions** as the source.
+3. Open **Actions → Update public school calendar → Run workflow**.
+4. Leave the optional school year blank for automatic detection, then run it.
+
+For routine maintenance, watch the repository so GitHub emails you about failed Actions runs. Scheduled checks run weekly and daily in July and August, though GitHub may delay or skip an individual scheduled run. A manual **Run workflow** is always available and does not require the Mac or iPhone to stay awake.
+
+Local live check (downloads only the public HCPS page and writes ignored files under `build/`):
+
+```zsh
+node tools/public-calendar-generator.mjs --output build/pages
+node tools/test-pages-artifact-privacy.mjs build/pages
+```
+
 ## Development source
 
 Edit files under `src/`. Do not hand-edit the bundled `Izzy's School Signal.js` release.
