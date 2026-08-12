@@ -2,7 +2,7 @@
 // These must be at the very top of the file. Do not edit.
 // icon-color: blue; icon-glyph: magic;
 // Izzy's School Signal
-// Version 15.4.0: shared public-calendar validation and recoverable local caching.
+// Version 15.5.0: bounded prepared-data sync with recoverable local caching.
 
 const __CalendarProviderModule = (() => {
 // Variables used by Scriptable.
@@ -971,6 +971,25 @@ function calendarCacheReceiptPath() {
   return fm.joinPath(calendarDirectoryPath(fm), "calendar-cache-receipt.json");
 }
 
+function calendarSyncStatusPath() {
+  const fm = calendarFileManager();
+  return fm.joinPath(calendarDirectoryPath(fm), "sync-status.json");
+}
+
+function writePublicCalendarSyncStatus(value) {
+  const fm = calendarFileManager(), destination = calendarSyncStatusPath(), temporary = `${destination}.tmp`;
+  ensureCalendarDirectory(fm);
+  if (fm.fileExists(temporary)) fm.remove(temporary);
+  fm.writeString(temporary, JSON.stringify(Object.assign({
+    schemaVersion: 1,
+    checkedAt: new Date().toISOString()
+  }, value), null, 2) + "\n");
+  JSON.parse(fm.readString(temporary));
+  if (fm.fileExists(destination)) fm.remove(destination);
+  fm.move(temporary, destination);
+  return destination;
+}
+
 function validateCalendarRaw(raw, label) {
   const parsed = parseCalendarJson(raw, label);
   const previousCalendar = CALENDAR;
@@ -1098,6 +1117,75 @@ async function installPublicCalendarData(data, options = {}) {
   try { writeCalendarCacheReceipt(receipt); }
   catch (error) { if (typeof console !== "undefined" && console.log) console.log(`Calendar receipt could not be saved: ${error.message || String(error)}`); }
   return Object.freeze({ changed: true, destination, validation, receipt });
+}
+
+async function syncPreparedPublicCalendar(options = {}) {
+  const endpoint = String(options.url || APP_INFO.publicCalendarURL || "").trim();
+  if (endpoint !== "https://agattone96.github.io/izzy-school-signal/data/calendar.json") {
+    throw new Error("The prepared public-calendar endpoint is not trusted.");
+  }
+  const sourceBefore = readCalendarSource(), attemptedAt = new Date().toISOString();
+  try { writeCalendarSource(Object.assign({}, sourceBefore, {
+    schemaVersion: 1,
+    kind: "robinson",
+    displayName: "Robinson public calendar",
+    lastAttemptAt: attemptedAt,
+    health: sourceBefore.lastSuccessAt || CALENDAR ? "refreshing" : "missing",
+    error: null
+  })); } catch (_) {}
+  try {
+    const request = new Request(endpoint);
+    request.method = "GET";
+    request.headers = { Accept: "application/json" };
+    request.timeoutInterval = Number(APP_INFO.publicCalendarRequestTimeoutSeconds || 15);
+    const raw = await request.loadString(), response = request.response || {}, status = Number(response.statusCode || 0);
+    if (status && (status < 200 || status >= 300)) throw new Error(`Public calendar returned HTTP ${status}.`);
+    if (raw.length > 1000000) throw new Error("Public calendar download was unexpectedly large.");
+    let candidate;
+    try { candidate = JSON.parse(raw); }
+    catch (_) { throw new Error("Public calendar download was not valid JSON."); }
+    const expectedSchoolYear = options.expectedSchoolYear || deriveActiveSchoolYear(new Date(), CALENDAR);
+    const installed = await installPublicCalendarData(candidate, {
+      expectedSchoolYear,
+      sourceLabel: "Prepared public calendar"
+    });
+    const completedAt = new Date().toISOString();
+    try { writeCalendarSource({
+      schemaVersion: 1,
+      kind: "robinson",
+      displayName: "Robinson public calendar",
+      lastAttemptAt: attemptedAt,
+      lastSuccessAt: completedAt,
+      health: "ready",
+      error: null
+    }); } catch (_) {}
+    try { writePublicCalendarSyncStatus({
+      status: "updated",
+      completedAt,
+      lastSuccessfulSync: completedAt,
+      schoolYear: installed.validation.schoolYear,
+      eventCount: installed.validation.eventCount,
+      source: "prepared-public-calendar"
+    }); } catch (_) {}
+    return Object.freeze({
+      ok: true,
+      schoolYear: installed.validation.schoolYear,
+      eventCount: installed.validation.eventCount,
+      installed
+    });
+  } catch (error) {
+    const message = String(error && error.message || error || "Calendar sync failed.").slice(0, 500);
+    try { writeCalendarSource(Object.assign({}, sourceBefore, {
+      schemaVersion: 1,
+      kind: "robinson",
+      displayName: sourceBefore.displayName || "Robinson public calendar",
+      lastAttemptAt: attemptedAt,
+      health: sourceBefore.lastSuccessAt || CALENDAR ? "stale" : "error",
+      error: `${message} The last valid calendar is still active.`
+    })); } catch (_) {}
+    try { writePublicCalendarSyncStatus({ status: "failed", error: message, source: "prepared-public-calendar" }); } catch (_) {}
+    return Object.freeze({ ok: false, error: `${message} The last valid calendar is still active.` });
+  }
 }
 
 async function restoreLastKnownGoodCalendar(options = {}) {
@@ -2138,6 +2226,7 @@ function buildViewModel(todayKey) {
     installIcsCalendar,
     refreshConfiguredCalendarSource,
     installPublicCalendarData,
+    syncPreparedPublicCalendar,
     restoreLastKnownGoodCalendar,
     lastKnownGoodCalendarPath,
     calendarCacheReceiptPath,

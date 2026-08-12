@@ -1,8 +1,8 @@
 const APP_INFO = Object.freeze({
   id: "izzy-school-signal",
   name: "Izzy's School Signal",
-  version: "15.4.0",
-  build: 150400,
+  version: "15.5.0",
+  build: 150500,
   buildDate: "2026-08-11",
   dataSchemaVersion: 4,
   calendarSchemaVersion: 1,
@@ -13,6 +13,8 @@ const APP_INFO = Object.freeze({
   staleWarningLeadDays: 60,
   dataDirectoryName: "IzzySchoolSignal",
   calendarFileName: "calendar.json",
+  publicCalendarURL: "https://agattone96.github.io/izzy-school-signal/data/calendar.json",
+  publicCalendarRequestTimeoutSeconds: 15,
   templateFileName: "school-year-template.json"
 });
 

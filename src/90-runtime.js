@@ -40,7 +40,7 @@ async function handleCommandCenterAction(action,presentation){
     if(action==="remove-override"){const a=new Alert();a.title="Remove Manual Override?";a.message=String(q.date||"");a.addDestructiveAction?a.addDestructiveAction("Remove"):a.addAction("Remove");a.addCancelAction("Cancel");const c=await a.presentAlert();if(c!==-1&&c!==1)removeOverrideForDate(String(q.date||""));return showCommandCenter(await loadPresentation(),Object.assign({},route,{route:"settings"}));}
     if(action==="reconcile-notifications"){const r=await reconcileSchoolNotifications();await showMessage("Notifications Updated",`${r.scheduled} Izzy School Signal reminders are pending.`);return showCommandCenter(await loadPresentation(),Object.assign({},route,{route:"settings"}));}
     if(action==="sync")return runSyncWithProgress(route);
-    if(!action){await maybeCheckForAppUpdate();const setupState=loadOnboardingState().value;if(!setupState.completed)return runOnboardingBridgeFlow(presentation,setupState.currentStep||1);const settingsState=loadAppSettings(),source=CalendarProvider.readCalendarSource();if(settingsState.settings.autoSyncOnOpen&&source.kind==="robinson"){await runOfficialSyncWithDiff();if(settingsState.settings.notificationsEnabled)try{await reconcileSchoolNotifications();}catch(_){}return showCommandCenter(await loadPresentation(),route);}}
+    if(!action){await maybeCheckForAppUpdate();const setupState=loadOnboardingState().value;if(!setupState.completed)return runOnboardingBridgeFlow(presentation,setupState.currentStep||1);}
   }catch(error){await showMessage("Action Could Not Complete",error.message||String(error));return showCommandCenter(await loadPresentation(),route);}
   return showCommandCenter(presentation,route);
 }

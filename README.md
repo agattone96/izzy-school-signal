@@ -36,6 +36,8 @@ One-time GitHub setup:
 
 For routine maintenance, watch the repository so GitHub emails you about failed Actions runs. Scheduled checks run weekly and daily in July and August, though GitHub may delay or skip an individual scheduled run. A manual **Run workflow** is always available and does not require the Mac or iPhone to stay awake.
 
+On the iPhone, Scriptable reads its validated local cache and does no calendar network work at startup or during widget rendering. **Sync Now** downloads only the prepared Pages JSON, with a 15-second timeout and last-known-good fallback.
+
 Local live check (downloads only the public HCPS page and writes ignored files under `build/`):
 
 ```zsh

@@ -19,6 +19,12 @@ Milestone 2 established the shared data seam. Milestone 3 adds the server-side g
 
 The generator uses Node built-ins only. A network, parsing, validation, or privacy failure stops before artifact upload, so the previously deployed Pages site remains the last-known-good public copy. GitHub Actions may start late or skip an individual schedule; the redundant schedule and manual **Run workflow** control are the free fallback. No Pushcut subscription or secret is required.
 
+## Lightweight Scriptable cache
+
+Scriptable never refreshes a calendar merely because the app or a widget opened. **Sync Now** makes one bounded request to the small Pages `data/calendar.json` prepared by GitHub Actions, validates it again on-device, and installs it through the recoverable cache transaction. The request times out after 15 seconds. Closing the progress screen cannot cancel an iOS request already in flight, but the request remains bounded and a failure leaves the last valid calendar active.
+
+Public `.ics` sources remain supported as an explicit manual alternative. The former WebView scraper remains in source temporarily for migration traceability but is no longer called by the daily runtime.
+
 ## Public and private rule
 
 The published calendar may contain official public school dates and their public source URLs. It must never contain a child's name, grade, household times, private schedule, notification identifiers, address, credentials, cookies, photos, or device paths.
